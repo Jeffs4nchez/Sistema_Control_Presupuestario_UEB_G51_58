@@ -1,0 +1,183 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ==================== VARIABLES GLOBALES ==================== */
+:root {
+  /* Tipografía */
+  --font-family: 'Inter', sans-serif;
+  
+  /* Colores principales */
+  --color-primary: #b71c1c;
+  --color-primary-dark: #8b0000;
+  --color-primary-light: #c62828;
+  --color-primary-lighter: #d32f2f;
+  --color-primary-accent: #e57373;
+  
+  /* Colores secundarios */
+  --color-secondary: #506690;
+  --color-secondary-light: #a0b4cc;
+  --color-secondary-lighter: #3d5a80;
+  
+  /* Colores de fondo */
+  --bg-dark: #0a1929;
+  --bg-card: #0d2840;
+  --bg-input: rgba(26, 58, 92, 0.5);
+  --bg-hover: rgba(139, 0, 0, 0.2);
+  
+  /* Colores de bordes */
+  --border-color: rgba(26, 58, 92, 0.5);
+  --border-input: #2a4a6c;
+  --border-light: 1px solid rgba(26, 58, 92, 1);
+  
+  /* Colores de texto */
+  --text-white: #ffffff;
+  --text-light: #a0b4cc;
+  --text-secondary: #506690;
+  
+  /* Sombras */
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  --shadow-primary: 0 10px 15px -3px rgba(183, 28, 28, 0.25);
+  --shadow-primary-hover: 0 20px 25px -5px rgba(183, 28, 28, 0.4);
+  
+  /* Efectos de gradiente */
+  --gradient-primary: linear-gradient(to right, #b71c1c, #c62828);
+  --gradient-primary-hover: linear-gradient(to right, #c62828, #d32f2f);
+  --gradient-primary-bg: linear-gradient(to bottom right, #b71c1c, #8b0000);
+  --gradient-bg-blur: rgba(13, 40, 64, 0.9);
+  
+  /* Tamaños */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
+  
+  /* BorderBeam */
+  --beam-size: 250;
+  --beam-duration: 12;
+  --beam-width: 2;
+  
+  /* Transiciones */
+  --transition-fast: 0.2s;
+  --transition-normal: 0.3s;
+}
+
+/* ==================== RESET Y BASE ==================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--bg-dark);
+  color: var(--text-white);
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ==================== ANIMACIONES ==================== */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes borderBeamFlow {
+  0% {
+    offset-distance: 0%;
+  }
+  100% {
+    offset-distance: 100%;
+  }
+}
+
+@keyframes meteor {
+  0% {
+    transform: rotate(var(--angle)) translateX(0);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--angle)) translateX(-500px);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes loadingBar {
+  0% {
+    width: 0;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+/* ==================== TIPOGRAFÍA GLOBAL ==================== */
+button,
+input,
+textarea,
+select,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+span,
+a {
+  font-family: var(--font-family);
+}
+
+/* ==================== SKELETON LOADING ==================== */
+@keyframes skeletonLoading {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.15) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  background-size: 1000px 100%;
+  border-radius: var(--radius-md);
+  animation: skeletonLoading 2s infinite;
+}

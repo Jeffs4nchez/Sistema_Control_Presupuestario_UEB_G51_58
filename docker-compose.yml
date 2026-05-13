@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18.3-alpine
+    container_name: presupuestario_db
+    environment:
+      POSTGRES_DB: control_presupuestario
+      POSTGRES_USER: presupuestario
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - presupuestario_network
+
+  # Laravel Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: presupuestario_backend
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=control_presupuestario
+      - DB_USERNAME=presupuestario
+      - DB_PASSWORD=${DB_PASSWORD:-secret}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend:/app
+    networks:
+      - presupuestario_network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: presupuestario_frontend
+    environment:
+      - VITE_API_URL=http://backend:8000/api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - presupuestario_network
+
+volumes:
+  postgres_data:
+
+networks:
+  presupuestario_network:
+    driver: bridge
