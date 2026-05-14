@@ -4,8 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { theme } from '../config/theme';
 import {
   LayoutDashboard, Users, LogOut, TrendingUp, FileText,
-  Table2, CheckCircle2, Menu, ChevronLeft, ChevronRight, BarChart2
+  Table2, CheckCircle2, Menu, ChevronLeft, ChevronRight, BarChart2, KeyRound
 } from 'lucide-react';
+import CambiarContrasenaModal from '../components/CambiarContrasenaModal';
 import logo from '../assets/logo.png';
 
 const BG     = theme.colors.dark['900'];
@@ -22,10 +23,16 @@ export const Dashboard = () => {
   const { user, logout, token } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   useEffect(() => {
     if (!token) navigate('/login');
   }, [token, navigate]);
+
+  // Abrir modal automáticamente si la contraseña es temporal
+  useEffect(() => {
+    if (user?.contrasena_temporal) setShowPasswordModal(true);
+  }, [user?.contrasena_temporal]);
 
   useEffect(() => {
     const handle = () => {
@@ -194,16 +201,33 @@ export const Dashboard = () => {
         {/* User + Logout */}
         <div style={{ padding: '10px 8px', borderTop: `1px solid ${BORDER}`, flexShrink: 0 }}>
           {sidebarOpen && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '10px 10px',
-              marginBottom: '8px',
-              background: ELEV,
-              borderRadius: theme.border.radiusMd,
-              border: `1px solid ${BORDER}`,
-            }}>
+            <button
+              onClick={() => setShowPasswordModal(true)}
+              title="Cambiar contraseña"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 10px',
+                marginBottom: '8px',
+                background: ELEV,
+                borderRadius: theme.border.radiusMd,
+                border: `1px solid ${BORDER}`,
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left',
+                fontFamily: theme.typography.fontFamily,
+                transition: 'all 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `${ACCENT}10`;
+                e.currentTarget.style.borderColor = `${ACCENT}30`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = ELEV;
+                e.currentTarget.style.borderColor = BORDER;
+              }}
+            >
               <div style={{
                 width: '32px', height: '32px',
                 borderRadius: '50%',
@@ -221,7 +245,8 @@ export const Dashboard = () => {
                   {user?.cargo || 'Sin cargo'}
                 </div>
               </div>
-            </div>
+              <KeyRound size={13} color={MUTED} style={{ flexShrink: 0 }} />
+            </button>
           )}
 
           <button
@@ -354,6 +379,11 @@ export const Dashboard = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Modal cambiar contraseña */}
+      {showPasswordModal && (
+        <CambiarContrasenaModal onClose={() => setShowPasswordModal(false)} />
+      )}
     </div>
   );
 };

@@ -554,7 +554,7 @@ export default function CrearCertificacion({ onCreated }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
               {[
                 { label: 'Codificado', value: montoDisponible.codificado, color: ACCENT, note: '(Asignado + Modificado)' },
-                { label: 'Ya Certificado', value: montoDisponible.certificado_actual + montoDisponible.certificado_pendiente, color: GOLD, note: '(Actual + Pendiente)' },
+                { label: 'Ya Certificado', value: montoDisponible.certificado_actual, color: GOLD, note: '(Pendiente de pago)' },
                 { label: 'Disponible', value: montoDisponible.disponible_final, color: montoDisponible.disponible_final > 0 ? GREEN : RED, note: montoDisponible.disponible_final > 0 ? 'Puedes certificar' : 'Sin saldo', bold: true },
               ].map((s, i) => (
                 <div key={i} style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '10px 12px' }}>

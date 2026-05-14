@@ -19,7 +19,6 @@ return new class extends Migration
             $table->unique(['id_fuente', 'id_item', 'id_cedula_presupuestaria']);
             $table->decimal('asignado', 15, 2)->nullable();
             $table->decimal('modificado', 15, 2)->nullable();
-            $table->decimal('certificado', 15, 2)->nullable();
             $table->decimal('comprometido', 15, 2)->nullable();
             $table->decimal('devengado', 15, 2)->nullable();
             $table->decimal('pagado', 15, 2)->nullable();

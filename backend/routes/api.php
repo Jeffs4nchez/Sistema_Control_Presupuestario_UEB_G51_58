@@ -23,6 +23,8 @@ use App\Http\Controllers\LiquidacionController;
 // Rutas de autenticación públicas
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // Rutas de Estructura Presupuestaria (públicas por ahora)
 Route::post('/estructura-presupuestaria/upload', [EstructuraPresupuestariaController::class, 'upload']);
@@ -57,6 +59,7 @@ Route::middleware('validate.custom.token')->group(function () {
         return $request->user();
     });
     Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::post('/logout', [AuthController::class, 'logout']);
     
     // Rutas CRUD de Usuarios

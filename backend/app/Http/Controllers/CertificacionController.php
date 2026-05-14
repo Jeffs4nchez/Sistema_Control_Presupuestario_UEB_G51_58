@@ -63,9 +63,15 @@ class CertificacionController extends Controller
                                   ->get();
 
             $data = $certificados->map(function ($cert) {
-                $liquidado = $cert->items()->sum('monto') ?? 0;
-                $montoTotal = $liquidado;
-                
+                $montoTotal = (float) ($cert->items()->sum('monto') ?? 0);
+
+                $liquidado = (float) DB::table('liquidaciones')
+                    ->join('certificacion_items', 'liquidaciones.id_certificacion_item', '=', 'certificacion_items.id_certificacion_item')
+                    ->where('certificacion_items.id_certificacion', $cert->id_certificacion)
+                    ->sum('liquidaciones.cantidad_liquidacion');
+
+                $pendiente = max(0, $montoTotal - $liquidado);
+
                 // Convertir fecha a datetime si es string
                 $fecha = $cert->fecha_elaboracion;
                 if (is_string($fecha)) {
@@ -80,7 +86,7 @@ class CertificacionController extends Controller
                     'fecha_elaboracion' => $fecha->format('d/m/Y'),
                     'monto_total' => number_format($montoTotal, 2, ',', '.'),
                     'liquidado' => number_format($liquidado, 2, ',', '.'),
-                    'pendiente' => number_format(0, 2, ',', '.'),
+                    'pendiente' => number_format($pendiente, 2, ',', '.'),
                     'estado' => $cert->estado
                 ];
             });
@@ -805,7 +811,7 @@ class CertificacionController extends Controller
             $fuenteItem = DB::table('fuente_items')
                 ->where('id_item', $idItem)
                 ->where('id_fuente', $idFuente)
-                ->select('asignado', 'modificado', 'certificado')
+                ->select('asignado', 'modificado')
                 ->first();
 
             if (!$fuenteItem) {
@@ -817,13 +823,32 @@ class CertificacionController extends Controller
 
             $asignado = floatval($fuenteItem->asignado ?? 0);
             $modificado = floatval($fuenteItem->modificado ?? 0);
-            $certificado_actual = floatval($fuenteItem->certificado ?? 0);
+
+            // Certificado bruto: suma de todos los montos aprobados/liquidados
+            $certificado_bruto = (float) DB::table('certificacion_items')
+                ->join('certificacion', 'certificacion_items.id_certificacion', '=', 'certificacion.id_certificacion')
+                ->where('certificacion_items.id_item', $idItem)
+                ->where('certificacion_items.id_fuente', $idFuente)
+                ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
+                ->sum('certificacion_items.monto');
+
+            // Lo ya liquidado (pagado) de esas certificaciones
+            $ya_liquidado = (float) DB::table('liquidaciones')
+                ->join('certificacion_items', 'liquidaciones.id_certificacion_item', '=', 'certificacion_items.id_certificacion_item')
+                ->join('certificacion', 'certificacion_items.id_certificacion', '=', 'certificacion.id_certificacion')
+                ->where('certificacion_items.id_item', $idItem)
+                ->where('certificacion_items.id_fuente', $idFuente)
+                ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
+                ->sum('liquidaciones.cantidad_liquidacion');
+
+            // Certificado neto = pendiente de pago (igual que cédula)
+            $certificado_neto = max(0, $certificado_bruto - $ya_liquidado);
 
             // Codificado = Asignado + Modificado
             $codificado = $asignado + $modificado;
 
-            // Disponible = Codificado - Certificado (sin pendientes)
-            $disponible_final = $codificado - $certificado_actual;
+            // Disponible = Codificado - Certificado neto (igual que Saldo Disponible en cédula)
+            $disponible_final = $codificado - $certificado_neto;
 
             return response()->json([
                 'success' => true,
@@ -831,10 +856,10 @@ class CertificacionController extends Controller
                     'asignado' => $asignado,
                     'modificado' => $modificado,
                     'codificado' => $codificado,
-                    'certificado_actual' => $certificado_actual,
-                    'certificado_pendiente' => 0, // No hay pendientes, se crean aprobados
+                    'certificado_actual' => $certificado_neto,
+                    'certificado_pendiente' => 0,
                     'disponible' => $disponible_final,
-                    'disponible_final' => max(0, $disponible_final), // No puede ser negativo
+                    'disponible_final' => max(0, $disponible_final),
                     'puede_certificar' => $disponible_final > 0
                 ]
             ], 200);

@@ -42,7 +42,12 @@ const LABEL_S = {
 }
 
 function fmt(v) {
-  const n = parseFloat(String(v ?? 0).replace(/\./g, '').replace(',', '.')) || 0
+  const s = String(v ?? 0)
+  // Si tiene coma es formato español "1.234,56" → quitar puntos, cambiar coma a punto
+  // Si no tiene coma es decimal raw "1000.00" o número → parseFloat directo
+  const n = s.includes(',')
+    ? parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0
+    : parseFloat(s) || 0
   return n.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
 }
 

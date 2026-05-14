@@ -54,14 +54,15 @@ class UserController extends Controller
                 'estado' => 'required|string|in:activo,inactivo'
             ]);
 
-            // Crear usuario con contraseña hasheada
+            // Crear usuario con contraseña temporal (debe cambiarla al primer login)
             $usuario = User::create([
-                'nombres' => $validated['nombres'],
-                'apellidos' => $validated['apellidos'],
+                'nombres'              => $validated['nombres'],
+                'apellidos'            => $validated['apellidos'],
                 'correo_institucional' => $validated['correo_institucional'],
-                'contrasena' => Hash::make($validated['contrasena']),
-                'cargo' => $validated['cargo'],
-                'estado' => $validated['estado']
+                'contrasena'           => Hash::make($validated['contrasena']),
+                'cargo'                => $validated['cargo'],
+                'estado'               => $validated['estado'],
+                'contrasena_temporal'  => true,
             ]);
 
             return response()->json([
@@ -156,7 +157,8 @@ class UserController extends Controller
             if (isset($validated['apellidos'])) $usuario->apellidos = $validated['apellidos'];
             if (isset($validated['correo_institucional'])) $usuario->correo_institucional = $validated['correo_institucional'];
             if (isset($validated['contrasena']) && !empty($validated['contrasena'])) {
-                $usuario->contrasena = Hash::make($validated['contrasena']);
+                $usuario->contrasena          = Hash::make($validated['contrasena']);
+                $usuario->contrasena_temporal = true; // el usuario debe cambiarla al entrar
             }
             if (isset($validated['cargo'])) $usuario->cargo = $validated['cargo'];
             if (isset($validated['estado'])) $usuario->estado = $validated['estado'];

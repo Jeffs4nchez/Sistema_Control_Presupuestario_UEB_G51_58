@@ -329,18 +329,25 @@ export const Login = () => {
               gap: '1.25rem',
               paddingTop: theme.spacing.sm
             }}>
-              <a href="#" style={{
-                color: '#0000ee',
-                fontSize: isMobile ? theme.typography.fontSize.xs : theme.typography.fontSize.sm,
-                textDecoration: 'none',
-                transition: theme.transition.fast,
-                textAlign: isMobile ? 'center' : 'right'
-              }}
-              onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
-              onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+              <button
+                type="button"
+                onClick={() => navigate('/recuperar-contrasena')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#0000ee',
+                  fontSize: isMobile ? theme.typography.fontSize.xs : theme.typography.fontSize.sm,
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontFamily: 'inherit',
+                  textAlign: isMobile ? 'center' : 'right',
+                }}
+                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
               >
                 He olvidado mi contraseña
-              </a>
+              </button>
               <button 
                 type="submit"
                 disabled={isLoading}

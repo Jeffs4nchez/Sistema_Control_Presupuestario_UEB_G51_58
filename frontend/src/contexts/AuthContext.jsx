@@ -100,6 +100,10 @@ export const AuthProvider = ({ children }) => {
     Cookies.remove('auth_token');
   }, []);
 
+  const updateUser = useCallback((partial) => {
+    setUser((prev) => ({ ...prev, ...partial }));
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -109,6 +113,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         login,
         logout,
+        updateUser,
       }}
     >
       {children}

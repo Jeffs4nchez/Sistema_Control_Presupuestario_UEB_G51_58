@@ -69,7 +69,6 @@ class CedulaPresupuestariaController extends Controller
                     // PASO 3: Parsear valores financieros
                     $asignado = $this->parseDecimal($row[5]);
                     $modificado = $this->parseDecimal($row[6]);
-                    $certificado = $this->parseDecimal($row[8]);
                     $comprometido = $this->parseDecimal($row[9]);
                     $devengado = $this->parseDecimal($row[10]);
                     $pagado = $this->parseDecimal($row[11]);
@@ -135,7 +134,6 @@ class CedulaPresupuestariaController extends Controller
                             ->update([
                                 'asignado' => $asignado,
                                 'modificado' => $modificado,
-                                'certificado' => $certificado,
                                 'comprometido' => $comprometido,
                                 'devengado' => $devengado,
                                 'pagado' => $pagado,
@@ -166,7 +164,6 @@ class CedulaPresupuestariaController extends Controller
                                 'ubicacion.cod_ubicacion',
                                 'fuente_items.asignado',
                                 'fuente_items.modificado',
-                                'fuente_items.certificado',
                                 'fuente_items.comprometido',
                                 'fuente_items.devengado',
                                 'fuente_items.pagado',
@@ -195,7 +192,6 @@ class CedulaPresupuestariaController extends Controller
                             'id_fuente' => $fuente->id_fuente,
                             'asignado' => $asignado,
                             'modificado' => $modificado,
-                            'certificado' => $certificado,
                             'comprometido' => $comprometido,
                             'devengado' => $devengado,
                             'pagado' => $pagado,
@@ -227,7 +223,6 @@ class CedulaPresupuestariaController extends Controller
                                 'ubicacion.cod_ubicacion',
                                 'fuente_items.asignado',
                                 'fuente_items.modificado',
-                                'fuente_items.certificado',
                                 'fuente_items.comprometido',
                                 'fuente_items.devengado',
                                 'fuente_items.pagado',
@@ -292,7 +287,6 @@ class CedulaPresupuestariaController extends Controller
                 'items_con_datos' => \DB::table('fuente_items')->whereNotNull('asignado')->count(),
                 'valor_total_asignado' => \DB::table('fuente_items')->sum('asignado'),
                 'valor_total_modificado' => \DB::table('fuente_items')->sum('modificado'),
-                'valor_total_certificado' => \DB::table('fuente_items')->sum('certificado'),
                 'valor_total_comprometido' => \DB::table('fuente_items')->sum('comprometido'),
                 'valor_total_devengado' => \DB::table('fuente_items')->sum('devengado'),
                 'valor_total_pagado' => \DB::table('fuente_items')->sum('pagado'),
@@ -334,6 +328,7 @@ class CedulaPresupuestariaController extends Controller
                 ->leftJoin('ubicacion', 'items.id_ubicacion', '=', 'ubicacion.id_ubicacion')
                 ->select(
                     'items.id_item',
+                    'fuente_items.id_fuente',
                     'items.cod_item',
                     'items.nombre_item',
                     'programa.cod_programa',
@@ -342,7 +337,6 @@ class CedulaPresupuestariaController extends Controller
                     'ubicacion.cod_ubicacion',
                     'fuente_items.asignado',
                     'fuente_items.modificado',
-                    'fuente_items.certificado',
                     'fuente_items.comprometido',
                     'fuente_items.devengado',
                     'fuente_items.pagado',
@@ -364,6 +358,24 @@ class CedulaPresupuestariaController extends Controller
 
             // Transformar datos para mostrar valores por defecto si están vacíos
             $data = $items->map(function ($item) {
+                // Certificado = SUM(cert_items.monto) - SUM(liquidaciones) para este item+fuente
+                $totalCertificado = (float) \DB::table('certificacion_items')
+                    ->join('certificacion', 'certificacion_items.id_certificacion', '=', 'certificacion.id_certificacion')
+                    ->where('certificacion_items.id_item', $item->id_item)
+                    ->where('certificacion_items.id_fuente', $item->id_fuente)
+                    ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
+                    ->sum('certificacion_items.monto');
+
+                $totalLiquidado = (float) \DB::table('liquidaciones')
+                    ->join('certificacion_items', 'liquidaciones.id_certificacion_item', '=', 'certificacion_items.id_certificacion_item')
+                    ->join('certificacion', 'certificacion_items.id_certificacion', '=', 'certificacion.id_certificacion')
+                    ->where('certificacion_items.id_item', $item->id_item)
+                    ->where('certificacion_items.id_fuente', $item->id_fuente)
+                    ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
+                    ->sum('liquidaciones.cantidad_liquidacion');
+
+                $certificado = max(0, $totalCertificado - $totalLiquidado);
+
                 return [
                     'id_item' => $item->id_item,
                     'cod_item' => $item->cod_item,
@@ -374,7 +386,7 @@ class CedulaPresupuestariaController extends Controller
                     'cod_ubicacion' => $item->cod_ubicacion ?? '-',
                     'asignado' => $item->asignado ?? '-',
                     'modificado' => $item->modificado ?? '-',
-                    'certificado' => $item->certificado ?? '-',
+                    'certificado' => $certificado,
                     'comprometido' => $item->comprometido ?? '-',
                     'devengado' => $item->devengado ?? '-',
                     'pagado' => $item->pagado ?? '-',

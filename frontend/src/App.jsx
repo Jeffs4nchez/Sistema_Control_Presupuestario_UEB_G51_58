@@ -11,6 +11,8 @@ import EstructuraPresupuestariaData from './pages/EstructuraPresupuestariaData';
 import CedulaPresupuestaria from './pages/CedulaPresupuestaria';
 import Certificacion from './pages/Certificacion';
 import Liquidaciones from './pages/Liquidaciones';
+import RecuperarContrasena from './pages/RecuperarContrasena';
+import RestablecerContrasena from './pages/RestablecerContrasena';
 import './App.css';
 import { useContext } from 'react';
 
@@ -24,6 +26,8 @@ function AppContent() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
+      <Route path="/restablecer-contrasena" element={<RestablecerContrasena />} />
       
       {/* Dashboard Layout con rutas anidadas */}
       <Route
@@ -51,6 +55,7 @@ function AppContent() {
 
         {/* Ruta para /dashboard/liquidaciones */}
         <Route path="liquidaciones" element={<Liquidaciones />} />
+
         
         {/* Ruta por defecto del dashboard */}
         <Route 

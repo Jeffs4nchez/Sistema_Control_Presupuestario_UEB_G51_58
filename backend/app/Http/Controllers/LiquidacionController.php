@@ -162,10 +162,12 @@ class LiquidacionController extends Controller
 
             // Calcular liquidado/pendiente por ítem
             $allItems = $allItems->map(function ($row) {
+                $monto          = (float) $row->monto;
                 $liquidado      = (float) Liquidacion::where('id_certificacion_item', $row->id_certificacion_item)
                                                      ->sum('cantidad_liquidacion');
+                $row->monto     = $monto;
                 $row->liquidado = $liquidado;
-                $row->pendiente = max(0, (float) $row->monto - $liquidado);
+                $row->pendiente = max(0, $monto - $liquidado);
                 return $row;
             });
 
@@ -241,10 +243,12 @@ class LiquidacionController extends Controller
 
             // Agregar liquidado y pendiente por certificacion_item
             $result = $records->map(function ($row) {
-                $liquidado = (float) Liquidacion::where('id_certificacion_item', $row->id_certificacion_item)
-                                               ->sum('cantidad_liquidacion');
+                $monto          = (float) $row->monto;
+                $liquidado      = (float) Liquidacion::where('id_certificacion_item', $row->id_certificacion_item)
+                                                     ->sum('cantidad_liquidacion');
+                $row->monto     = $monto;
                 $row->liquidado = $liquidado;
-                $row->pendiente = max(0, (float) $row->monto - $liquidado);
+                $row->pendiente = max(0, $monto - $liquidado);
                 return $row;
             });
 

@@ -69,8 +69,10 @@ export default function CedulaPresupuestariaData() {
   const handleSearch = (e) => { e.preventDefault(); setPage(1); fetchData() }
 
   const formatCurrency = (value) => {
-    if (!value || value === 0) return "—"
-    return `$${parseFloat(value).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    if (value === null || value === undefined || value === '-') return "—"
+    const n = parseFloat(value)
+    if (isNaN(n)) return "—"
+    return `$${n.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   const calcularSaldoDisponible = (item) => {

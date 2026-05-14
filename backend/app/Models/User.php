@@ -39,7 +39,10 @@ class User extends Authenticatable
         'contrasena',
         'cargo',
         'estado',
+        'contrasena_temporal',
         'api_token',
+        'password_reset_token',
+        'password_reset_expires_at',
     ];
 
     /**
