@@ -1,0 +1,32 @@
+[33mcommit 07059e517ab28e677b9f51bd985f2bbf293b8ab2[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/recuperar_contraseña[m[33m, [m[1;31morigin/feature/recuperar_contraseña[m[33m)[m
+Author: Jeffs4nchez <jeff0967943615@gmail.com>
+Date:   Thu May 14 00:38:45 2026 -0500
+
+    feat: agrega pantalla de recuperar contraseña
+
+ backend/app/Http/Controllers/AuthController.php    | 154 [32m++++++++++[m[31m-[m
+ .../Controllers/CedulaPresupuestariaController.php |  28 [32m+[m[31m-[m
+ .../Http/Controllers/CertificacionController.php   |  47 [32m+++[m[31m-[m
+ .../app/Http/Controllers/LiquidacionController.php |  12 [32m+[m[31m-[m
+ backend/app/Http/Controllers/UserController.php    |  16 [32m+[m[31m-[m
+ backend/app/Models/User.php                        |   3 [32m+[m
+ .../app/Observers/CertificacionItemObserver.php    |  24 [32m+[m[31m-[m
+ ...2025_01_02_000016_create_fuente_items_table.php |   1 [31m-[m
+ ...25_01_02_000018_create_liquidaciones_table.php} |  10 [32m+[m[31m-[m
+ ...000001_add_id_fuente_to_liquidaciones_table.php |  27 [31m--[m
+ ...with_id_certificacion_item_in_liquidaciones.php |  38 [31m---[m
+ ...2_add_contrasena_temporal_to_usuarios_table.php |  22 [32m++[m
+ ...000003_add_password_reset_to_usuarios_table.php |  23 [32m++[m
+ backend/routes/api.php                             |   3 [32m+[m
+ frontend/src/App.jsx                               |   5 [32m+[m
+ frontend/src/components/CambiarContrasenaModal.jsx | 217 [32m+++++++++++++++[m
+ frontend/src/contexts/AuthContext.jsx              |   5 [32m+[m
+ frontend/src/pages/CambiarContrasena.jsx           | 228 [32m+++++++++++++++[m
+ frontend/src/pages/CedulaPresupuestariaData.jsx    |   6 [32m+[m[31m-[m
+ frontend/src/pages/CrearCertificacion.jsx          |   2 [32m+[m[31m-[m
+ frontend/src/pages/Dashboard.jsx                   |  54 [32m+++[m[31m-[m
+ frontend/src/pages/Liquidaciones.jsx               |   7 [32m+[m[31m-[m
+ frontend/src/pages/Login.jsx                       |  27 [32m+[m[31m-[m
+ frontend/src/pages/RecuperarContrasena.jsx         | 249 [32m+++++++++++++++++[m
+ frontend/src/pages/RestablecerContrasena.jsx       | 307 [32m+++++++++++++++++++++[m
+ 25 files changed, 1352 insertions(+), 163 deletions(-)

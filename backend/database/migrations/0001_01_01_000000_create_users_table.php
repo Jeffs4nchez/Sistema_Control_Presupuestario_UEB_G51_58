@@ -23,6 +23,9 @@ return new class extends Migration
             $table->string('api_token', 80)->unique()->nullable();
             $table->string('cargo', 100);
             $table->string('estado', 50);
+            $table->boolean('contrasena_temporal')->default(false);
+            $table->string('password_reset_token')->nullable()->unique();
+            $table->timestamp('password_reset_expires_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });

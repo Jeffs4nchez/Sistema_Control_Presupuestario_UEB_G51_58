@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Liquidacion;
 use App\Models\CertificacionItem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class LiquidacionController extends Controller
 {
@@ -25,7 +26,7 @@ class LiquidacionController extends Controller
 
             $liquidaciones = $query->get();
 
-            $totalLiquidado = $liquidaciones->sum('cantidad_liquidacion');
+            $totalLiquidado = $liquidaciones->where('estado', '!=', 'ANULADA')->sum('cantidad_liquidacion');
 
             // Traer el monto certificado de certificacion_items
             $certItem = null;
@@ -69,6 +70,7 @@ class LiquidacionController extends Controller
             $montoCertificado = (float) $certItem->monto;
 
             $yaLiquidado = (float) Liquidacion::where('id_certificacion_item', $request->id_certificacion_item)
+                                              ->where('estado', '!=', 'ANULADA')
                                               ->sum('cantidad_liquidacion');
 
             $disponible = max(0, $montoCertificado - $yaLiquidado);
@@ -121,6 +123,43 @@ class LiquidacionController extends Controller
     }
 
     /**
+     * Anular una liquidación (soft delete)
+     * PATCH /liquidaciones/{id}/anular
+     */
+    public function anular(Request $request, $id)
+    {
+        $request->validate([
+            'motivo_anulacion' => 'required|string|max:255',
+        ]);
+
+        try {
+            $liquidacion = Liquidacion::findOrFail($id);
+
+            if ($liquidacion->estado === 'ANULADA') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Esta liquidación ya está anulada',
+                ], 422);
+            }
+
+            $usuario = Auth::user();
+
+            $liquidacion->estado               = 'ANULADA';
+            $liquidacion->motivo_anulacion     = $request->motivo_anulacion;
+            $liquidacion->id_usuario_anulacion = $usuario?->id_usuario ?? null;
+            $liquidacion->save();
+
+            return response()->json([
+                'success' => true,
+                'data'    => $liquidacion,
+                'message' => 'Liquidación anulada correctamente',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Certificaciones agrupadas con sus ítems y estado de liquidación
      * GET /liquidaciones/certificaciones?search=X
      */
@@ -164,6 +203,7 @@ class LiquidacionController extends Controller
             $allItems = $allItems->map(function ($row) {
                 $monto          = (float) $row->monto;
                 $liquidado      = (float) Liquidacion::where('id_certificacion_item', $row->id_certificacion_item)
+                                                     ->where('estado', '!=', 'ANULADA')
                                                      ->sum('cantidad_liquidacion');
                 $row->monto     = $monto;
                 $row->liquidado = $liquidado;
@@ -245,6 +285,7 @@ class LiquidacionController extends Controller
             $result = $records->map(function ($row) {
                 $monto          = (float) $row->monto;
                 $liquidado      = (float) Liquidacion::where('id_certificacion_item', $row->id_certificacion_item)
+                                                     ->where('estado', '!=', 'ANULADA')
                                                      ->sum('cantidad_liquidacion');
                 $row->monto     = $monto;
                 $row->liquidado = $liquidado;

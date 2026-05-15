@@ -13,6 +13,10 @@ import Certificacion from './pages/Certificacion';
 import Liquidaciones from './pages/Liquidaciones';
 import RecuperarContrasena from './pages/RecuperarContrasena';
 import RestablecerContrasena from './pages/RestablecerContrasena';
+import EntidadRequiriente from './pages/EntidadRequiriente';
+import PresupuestoDisponible from './pages/PresupuestoDisponible';
+import Reportes from './pages/Reportes';
+import ReportePrint from './pages/ReportePrint';
 import './App.css';
 import { useContext } from 'react';
 
@@ -28,6 +32,7 @@ function AppContent() {
       <Route path="/login" element={<Login />} />
       <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
       <Route path="/restablecer-contrasena" element={<RestablecerContrasena />} />
+      <Route path="/reporte-print" element={<ReportePrint />} />
       
       {/* Dashboard Layout con rutas anidadas */}
       <Route
@@ -56,7 +61,15 @@ function AppContent() {
         {/* Ruta para /dashboard/liquidaciones */}
         <Route path="liquidaciones" element={<Liquidaciones />} />
 
-        
+        {/* Ruta para /dashboard/entidad-requirente */}
+        <Route path="entidad-requirente" element={<EntidadRequiriente />} />
+
+        {/* Ruta para /dashboard/presupuesto-disponible */}
+        <Route path="presupuesto-disponible" element={<PresupuestoDisponible />} />
+
+        {/* Ruta para /dashboard/reportes */}
+        <Route path="reportes" element={<Reportes />} />
+
         {/* Ruta por defecto del dashboard */}
         <Route 
           index 

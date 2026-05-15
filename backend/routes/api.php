@@ -8,6 +8,9 @@ use App\Http\Controllers\EstructuraPresupuestariaController;
 use App\Http\Controllers\CedulaPresupuestariaController;
 use App\Http\Controllers\CertificacionController;
 use App\Http\Controllers\LiquidacionController;
+use App\Http\Controllers\EntidadRequirienteController;
+use App\Http\Controllers\PresupuestoController;
+use App\Http\Controllers\ReporteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -91,7 +94,27 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::get('/liquidaciones',                     [LiquidacionController::class, 'index']);
     Route::post('/liquidaciones',                    [LiquidacionController::class, 'store']);
     Route::delete('/liquidaciones/{id}',             [LiquidacionController::class, 'destroy']);
+    Route::patch('/liquidaciones/{id}/anular',       [LiquidacionController::class, 'anular']);
+
+    // Rutas de Entidades Requirientes (HU-08)
+    Route::get('/entidades-requirientes',            [EntidadRequirienteController::class, 'index']);
+    Route::post('/entidades-requirientes',           [EntidadRequirienteController::class, 'store']);
+    Route::get('/entidades-requirientes/{id}',       [EntidadRequirienteController::class, 'show']);
+    Route::put('/entidades-requirientes/{id}',       [EntidadRequirienteController::class, 'update']);
+    Route::delete('/entidades-requirientes/{id}',    [EntidadRequirienteController::class, 'destroy']);
+
+    // Rutas de Reportes CSV (HU-15)
+    Route::get('/reportes/certificaciones/csv',      [ReporteController::class, 'certificacionesCsv']);
+    Route::get('/reportes/liquidaciones/csv',        [ReporteController::class, 'liquidacionesCsv']);
+    Route::get('/reportes/presupuesto/csv',          [ReporteController::class, 'presupuestoCsv']);
+    // Rutas de Reportes JSON para PDF/impresión
+    Route::get('/reportes/certificaciones/json',     [ReporteController::class, 'certificacionesJson']);
+    Route::get('/reportes/liquidaciones/json',       [ReporteController::class, 'liquidacionesJson']);
+    Route::get('/reportes/presupuesto/json',         [ReporteController::class, 'presupuestoJson']);
 });
+
+// Presupuesto disponible (HU-09) - público para el frontend
+Route::get('/presupuesto-disponible', [PresupuestoController::class, 'index']);
 
 // Ruta de prueba - Hola Mundo
 Route::get('/hola-mundo', function () {

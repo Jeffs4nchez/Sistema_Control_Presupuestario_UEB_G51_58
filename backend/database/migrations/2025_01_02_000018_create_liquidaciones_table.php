@@ -14,11 +14,14 @@ return new class extends Migration
             $table->date('fecha_creacion');
             $table->string('memorando', 100);
             $table->string('estado', 50);
+            $table->string('motivo_anulacion', 255)->nullable();
+            $table->unsignedBigInteger('id_usuario_anulacion')->nullable();
             $table->foreignId('id_item')->constrained('items', 'id_item');
             $table->foreignId('id_certificacion_item')
                   ->nullable()
                   ->constrained('certificacion_items', 'id_certificacion_item')
                   ->onDelete('cascade');
+            $table->foreign('id_usuario_anulacion')->references('id_usuario')->on('usuarios')->onDelete('set null');
             $table->timestamps();
         });
     }

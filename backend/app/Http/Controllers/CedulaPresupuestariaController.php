@@ -372,6 +372,7 @@ class CedulaPresupuestariaController extends Controller
                     ->where('certificacion_items.id_item', $item->id_item)
                     ->where('certificacion_items.id_fuente', $item->id_fuente)
                     ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
+                    ->where('liquidaciones.estado', '!=', 'ANULADA')
                     ->sum('liquidaciones.cantidad_liquidacion');
 
                 $certificado = max(0, $totalCertificado - $totalLiquidado);

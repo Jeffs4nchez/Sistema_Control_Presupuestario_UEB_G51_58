@@ -16,6 +16,8 @@ class Liquidacion extends Model
         'fecha_creacion',
         'memorando',
         'estado',
+        'motivo_anulacion',
+        'id_usuario_anulacion',
     ];
 
     public $timestamps = true;

@@ -3,7 +3,7 @@ import Cookies from 'js-cookie'
 import { theme } from '../config/theme'
 import {
   Search, ChevronDown, ChevronRight, Plus, Trash2,
-  BarChart2, X, RefreshCw, FileText,
+  BarChart2, X, RefreshCw, FileText, Ban,
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
@@ -98,6 +98,9 @@ export default function Liquidaciones() {
   const [saving,      setSaving]      = useState(false)
   const [formError,   setFormError]   = useState('')
   const [formOk,      setFormOk]      = useState('')
+
+  // Modal de anulación
+  const [anularModal, setAnularModal] = useState({ open: false, id: null, motivo: '', saving: false, error: '' })
 
   // ── Cargar certificaciones agrupadas ─────────────────────────────────
   const fetchCerts = useCallback(async (q = '') => {
@@ -204,6 +207,33 @@ export default function Liquidaciones() {
       fetchLiqs(selected)
       fetchCerts(search)
     } catch (e) { console.error(e) }
+  }
+
+  // ── Anular liquidación (soft delete) ─────────────────────────────────
+  const handleAnular = async () => {
+    if (!anularModal.motivo.trim()) {
+      setAnularModal(m => ({ ...m, error: 'Debe ingresar el motivo de anulación.' }))
+      return
+    }
+    setAnularModal(m => ({ ...m, saving: true, error: '' }))
+    try {
+      const token = Cookies.get('auth_token')
+      const res = await fetch(`${API}/liquidaciones/${anularModal.id}/anular`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo_anulacion: anularModal.motivo }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setAnularModal({ open: false, id: null, motivo: '', saving: false, error: '' })
+        fetchLiqs(selected)
+        fetchCerts(search)
+      } else {
+        setAnularModal(m => ({ ...m, saving: false, error: json.message || 'Error al anular.' }))
+      }
+    } catch {
+      setAnularModal(m => ({ ...m, saving: false, error: 'Error de conexión.' }))
+    }
   }
 
   const handleSearch = (e) => { e.preventDefault(); fetchCerts(search) }
@@ -533,43 +563,148 @@ export default function Liquidaciones() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '260px', overflowY: 'auto' }}>
-                  {liqs.map((liq) => (
-                    <div key={liq.id_liquidacion} style={{
-                      background: ELEV, border: `1px solid ${BORDER}`,
-                      borderRadius: theme.border.radiusMd, padding: '10px 12px',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
-                    }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: GREEN }}>{fmt(liq.cantidad_liquidacion)}</span>
-                          <span style={{ fontSize: '11px', color: MUTED }}>{liq.fecha_creacion}</span>
+                  {liqs.map((liq) => {
+                    const anulada = liq.estado === 'ANULADA'
+                    return (
+                      <div key={liq.id_liquidacion} style={{
+                        background: anulada ? `rgba(196,30,58,0.06)` : ELEV,
+                        border: `1px solid ${anulada ? 'rgba(196,30,58,0.25)' : BORDER}`,
+                        borderRadius: theme.border.radiusMd, padding: '10px 12px',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+                        opacity: anulada ? 0.75 : 1,
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px', gap: '6px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: anulada ? RED : GREEN, textDecoration: anulada ? 'line-through' : 'none' }}>
+                              {fmt(liq.cantidad_liquidacion)}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {anulada && (
+                                <span style={{ fontSize: '9px', fontWeight: 700, background: 'rgba(196,30,58,0.18)', color: RED, border: '1px solid rgba(196,30,58,0.35)', borderRadius: '999px', padding: '1px 6px', letterSpacing: '0.06em' }}>
+                                  ANULADA
+                                </span>
+                              )}
+                              <span style={{ fontSize: '11px', color: MUTED }}>{liq.fecha_creacion}</span>
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '11px', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {liq.memorando}
+                          </div>
+                          {anulada && liq.motivo_anulacion && (
+                            <div style={{ fontSize: '11px', color: RED, marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              Motivo: {liq.motivo_anulacion}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontSize: '11px', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {liq.memorando}
-                        </div>
+                        {!anulada && (
+                          <button
+                            onClick={() => setAnularModal({ open: true, id: liq.id_liquidacion, motivo: '', saving: false, error: '' })}
+                            title="Anular liquidación"
+                            style={{
+                              width: '26px', height: '26px', flexShrink: 0,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: 'rgba(196,30,58,0.12)', border: '1px solid rgba(196,30,58,0.3)',
+                              borderRadius: theme.border.radiusSmall, color: RED, cursor: 'pointer',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.25)' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none' }}
+                          >
+                            <Ban size={12} />
+                          </button>
+                        )}
                       </div>
-                      <button
-                        onClick={() => handleDelete(liq.id_liquidacion)}
-                        title="Eliminar"
-                        style={{
-                          width: '26px', height: '26px', flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: 'rgba(196,30,58,0.12)', border: '1px solid rgba(196,30,58,0.3)',
-                          borderRadius: theme.border.radiusSmall, color: RED, cursor: 'pointer',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.25)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.filter = 'none' }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
           </div>
         )}
       </div>
+
+      {/* ── Modal de Anulación ────────────────────────────────────────── */}
+      {anularModal.open && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,0.65)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: theme.colors.dark['800'],
+            border: `1px solid ${BORDER}`,
+            borderRadius: theme.border.radiusMd,
+            padding: '24px',
+            width: '100%', maxWidth: '420px',
+            boxShadow: theme.shadow?.lg,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Ban size={18} color={RED} />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: TEXT }}>Anular Liquidación</h3>
+              </div>
+              <button
+                onClick={() => setAnularModal({ open: false, id: null, motivo: '', saving: false, error: '' })}
+                style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: '2px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: MUTED }}>
+              La liquidación quedará anulada pero el registro se conserva para auditoría. Ingrese el motivo.
+            </p>
+
+            {anularModal.error && (
+              <div style={{ background: 'rgba(196,30,58,0.12)', border: '1px solid rgba(196,30,58,0.35)', borderRadius: theme.border.radiusMd, padding: '8px 12px', marginBottom: '12px', color: RED, fontSize: '12px' }}>
+                {anularModal.error}
+              </div>
+            )}
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={LABEL_S}>Motivo de anulación</label>
+              <textarea
+                value={anularModal.motivo}
+                onChange={(e) => setAnularModal(m => ({ ...m, motivo: e.target.value }))}
+                placeholder="Describa el motivo..."
+                maxLength={255}
+                rows={3}
+                style={{ ...INPUT_S, resize: 'vertical' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setAnularModal({ open: false, id: null, motivo: '', saving: false, error: '' })}
+                style={{
+                  flex: 1, padding: '9px',
+                  background: ELEV, color: MUTED,
+                  border: `1px solid ${BORDER}`,
+                  borderRadius: theme.border.radiusMd, cursor: 'pointer',
+                  fontSize: '13px', fontWeight: 600, fontFamily: theme.typography.fontFamily,
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAnular}
+                disabled={anularModal.saving}
+                style={{
+                  flex: 1, padding: '9px',
+                  background: 'rgba(196,30,58,0.85)', color: '#fff',
+                  border: '1px solid rgba(196,30,58,0.5)',
+                  borderRadius: theme.border.radiusMd, cursor: anularModal.saving ? 'default' : 'pointer',
+                  fontSize: '13px', fontWeight: 600, fontFamily: theme.typography.fontFamily,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                }}
+              >
+                <Ban size={14} />
+                {anularModal.saving ? 'Anulando...' : 'Confirmar Anulación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
