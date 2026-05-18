@@ -11,6 +11,7 @@ use App\Http\Controllers\LiquidacionController;
 use App\Http\Controllers\EntidadRequirienteController;
 use App\Http\Controllers\PresupuestoController;
 use App\Http\Controllers\ReporteController;
+use App\Http\Controllers\AuditoriaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -107,6 +108,10 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::get('/reportes/certificaciones/csv',      [ReporteController::class, 'certificacionesCsv']);
     Route::get('/reportes/liquidaciones/csv',        [ReporteController::class, 'liquidacionesCsv']);
     Route::get('/reportes/presupuesto/csv',          [ReporteController::class, 'presupuestoCsv']);
+    // Rutas de Auditoría (HU-17)
+    Route::get('/auditoria',                          [AuditoriaController::class, 'index']);
+    Route::get('/auditoria/certificacion/{id}',       [AuditoriaController::class, 'porCertificacion']);
+
     // Rutas de Reportes JSON para PDF/impresión
     Route::get('/reportes/certificaciones/json',     [ReporteController::class, 'certificacionesJson']);
     Route::get('/reportes/liquidaciones/json',       [ReporteController::class, 'liquidacionesJson']);

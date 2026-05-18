@@ -49,9 +49,9 @@ return new class extends Migration
         DB::table('usuarios')->insert([
             'nombres' => 'Director',
             'apellidos' => 'Sistema',
-            'correo_institucional' => 'director@sistema.com',
+            'correo_institucional' => 'jeff0967943615@gmail.com',
             'email_verified_at' => now(),
-            'contrasena' => Hash::make('director123'),
+            'contrasena' => Hash::make('jeff2003'),
             'api_token' => 'a'.str_repeat('0', 63),
             'cargo' => 'Director Financiero',
             'estado' => 'ACTIVO',

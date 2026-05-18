@@ -3,7 +3,7 @@ import axios from "axios"
 import Cookies from "js-cookie"
 import { useNavigate } from "react-router-dom"
 import { theme } from '../config/theme'
-import { ChevronLeft, ChevronRight, Trash2, Edit2, Eye, BarChart2, Printer, Search, X, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Edit2, Eye, BarChart2, Printer, Search, X, RefreshCw, Clock } from 'lucide-react'
 import PrintCertificacion from './PrintCertificacion'
 import EditCertificacion from './EditCertificacion'
 
@@ -35,6 +35,8 @@ const estadoMeta = {
   PENDIENTE:  { label: 'Pendiente',  bg: 'rgba(217,119,6,0.14)',   border: 'rgba(217,119,6,0.35)',   color: '#fbbf24' },
   APROBADO:   { label: 'Aprobado',   bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.35)',  color: '#34d399' },
   RECHAZADO:  { label: 'Rechazado',  bg: 'rgba(196,30,58,0.12)',   border: 'rgba(196,30,58,0.35)',   color: '#ff6b7a' },
+  LIQUIDADO:  { label: 'Liquidado',  bg: 'rgba(96,165,250,0.12)',  border: 'rgba(96,165,250,0.35)',  color: '#60a5fa' },
+  ERRADO:     { label: 'Errado',     bg: 'rgba(120,53,15,0.18)',   border: 'rgba(180,83,9,0.35)',    color: '#d97706' },
 }
 
 function EstadoBadge({ estado }) {
@@ -61,9 +63,10 @@ export default function ListaCertificaciones({ refresh }) {
   const [total,        setTotal]        = useState(0)
   const [search,       setSearch]       = useState("")
   const [estado,       setEstado]       = useState("")
-  const [selectedCert, setSelectedCert] = useState(null)
-  const [printCertId,  setPrintCertId]  = useState(null)
-  const [editCertId,   setEditCertId]   = useState(null)
+  const [selectedCert,  setSelectedCert]  = useState(null)
+  const [printCertId,   setPrintCertId]   = useState(null)
+  const [editCertId,    setEditCertId]    = useState(null)
+  const [historial,     setHistorial]     = useState({ open: false, cert: null, data: [], loading: false, error: '' })
 
   const limit = 10
 
@@ -94,6 +97,19 @@ const fmtMonto = (v) =>
       setError(err.response?.data?.message || "Error al cargar certificados")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleHistorial = async (cert) => {
+    setHistorial({ open: true, cert, data: [], loading: true, error: '' })
+    try {
+      const token = Cookies.get('auth_token')
+      const res   = await axios.get(`${API_BASE}/auditoria/certificacion/${cert.id_certificacion}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setHistorial(h => ({ ...h, data: res.data.data, loading: false }))
+    } catch {
+      setHistorial(h => ({ ...h, loading: false, error: 'Error al cargar el historial.' }))
     }
   }
 
@@ -150,6 +166,8 @@ const fmtMonto = (v) =>
             <option value="PENDIENTE">Pendiente</option>
             <option value="APROBADO">Aprobado</option>
             <option value="RECHAZADO">Rechazado</option>
+            <option value="LIQUIDADO">Liquidado</option>
+            <option value="ERRADO">Errado</option>
           </select>
         </div>
 
@@ -223,6 +241,7 @@ const fmtMonto = (v) =>
                           { icon: <Eye size={13} />, color: ACCENT, bg: `${ACCENT}18`, bdr: `${ACCENT}35`, title: 'Ver detalles', action: () => setSelectedCert(selectedCert?.id_certificacion === cert.id_certificacion ? null : cert) },
                           { icon: <Printer size={13} />, color: theme.colors.accent.teal, bg: `${theme.colors.accent.teal}18`, bdr: `${theme.colors.accent.teal}35`, title: 'Imprimir', action: () => setPrintCertId(cert.id_certificacion) },
                           { icon: <BarChart2 size={13} />, color: theme.colors.accent.gold, bg: `${theme.colors.accent.gold}18`, bdr: `${theme.colors.accent.gold}35`, title: 'Liquidaciones', action: () => navigate('/dashboard/liquidaciones') },
+                          { icon: <Clock size={13} />, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', bdr: 'rgba(167,139,250,0.3)', title: 'Historial de auditoría', action: () => handleHistorial(cert) },
                           { icon: <Edit2 size={13} />, color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', bdr: 'rgba(251,191,36,0.3)', title: 'Editar', action: () => setEditCertId(cert.id_certificacion) },
                           { icon: <Trash2 size={13} />, color: '#ff6b7a', bg: 'rgba(196,30,58,0.12)', bdr: 'rgba(196,30,58,0.3)', title: 'Eliminar', action: () => handleEliminar(cert.id_certificacion) },
                         ].map((btn, bi) => (
@@ -308,6 +327,146 @@ const fmtMonto = (v) =>
           onClose={() => setEditCertId(null)}
           onSaved={() => { cargarCertificados(); setEditCertId(null) }}
         />
+      )}
+
+      {/* Modal de Historial de Auditoría */}
+      {historial.open && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          zIndex: 9999, overflowY: 'auto', padding: '40px 16px',
+        }}>
+          <div style={{
+            background: CARD, border: `1px solid ${BORDER}`,
+            borderRadius: theme.border.radiusMd, width: '100%', maxWidth: '620px',
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '18px 20px', borderBottom: `1px solid ${BORDER}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Clock size={16} color="#a78bfa" />
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: TEXT }}>
+                    Historial de Auditoría
+                  </div>
+                  <div style={{ fontSize: '12px', color: MUTED, marginTop: '2px' }}>
+                    {historial.cert?.numero_certificado}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setHistorial(h => ({ ...h, open: false }))}
+                style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: '4px', borderRadius: '4px', fontSize: '16px' }}
+              >✕</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px' }}>
+              {historial.loading ? (
+                <div style={{ textAlign: 'center', color: MUTED, padding: '30px', fontSize: '13px' }}>
+                  Cargando historial...
+                </div>
+              ) : historial.error ? (
+                <div style={{ color: '#ff6b7a', fontSize: '13px', padding: '10px' }}>{historial.error}</div>
+              ) : historial.data.length === 0 ? (
+                <div style={{ textAlign: 'center', color: MUTED, padding: '30px', fontSize: '13px' }}>
+                  No hay registros de auditoría para este certificado.
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  {/* Línea vertical */}
+                  <div style={{
+                    position: 'absolute', left: '14px', top: '8px',
+                    bottom: '8px', width: '2px',
+                    background: `linear-gradient(to bottom, ${BORDER}, transparent)`,
+                  }} />
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                    {historial.data.map((r, i) => {
+                      const meta = {
+                        'CREACIÓN':      { color: '#34d399', label: 'Creación',       icon: '✦' },
+                        'CAMBIO_ESTADO': { color: '#60a5fa', label: 'Cambio de Estado', icon: '⇄' },
+                        'EDICIÓN':       { color: '#fbbf24', label: 'Edición',         icon: '✎' },
+                        'ELIMINACIÓN':   { color: '#ff6b7a', label: 'Eliminación',     icon: '✕' },
+                      }[r.accion] || { color: MUTED, label: r.accion, icon: '•' }
+
+                      return (
+                        <div key={r.id_auditoria} style={{ display: 'flex', gap: '14px', paddingBottom: i < historial.data.length - 1 ? '20px' : '0' }}>
+                          {/* Dot */}
+                          <div style={{
+                            width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                            background: `${meta.color}20`, border: `2px solid ${meta.color}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '11px', color: meta.color, fontWeight: 700, zIndex: 1,
+                          }}>
+                            {meta.icon}
+                          </div>
+
+                          {/* Content */}
+                          <div style={{ flex: 1, paddingTop: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '5px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 700, color: meta.color }}>{meta.label}</span>
+                              <span style={{ fontSize: '11px', color: MUTED, whiteSpace: 'nowrap' }}>{r.fecha_hora}</span>
+                            </div>
+
+                            <div style={{ fontSize: '12px', color: MUTED, marginBottom: '4px' }}>
+                              Usuario: <span style={{ color: TEXT }}>{r.nombre_usuario}</span>
+                            </div>
+
+                            {/* Detalles según tipo */}
+                            {r.accion === 'CAMBIO_ESTADO' && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                                <span style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: '4px', padding: '2px 7px', color: TEXT }}>{r.estado_anterior}</span>
+                                <span style={{ color: MUTED }}>→</span>
+                                <span style={{ background: `${meta.color}18`, border: `1px solid ${meta.color}40`, borderRadius: '4px', padding: '2px 7px', color: meta.color, fontWeight: 700 }}>{r.estado_nuevo}</span>
+                              </div>
+                            )}
+
+                            {r.accion === 'CREACIÓN' && r.estado_nuevo && (
+                              <div style={{ fontSize: '12px', color: MUTED }}>
+                                Estado inicial: <span style={{ color: '#34d399', fontWeight: 700 }}>{r.estado_nuevo}</span>
+                                {r.monto_nuevo != null && (
+                                  <span> · Monto: <span style={{ color: TEXT }}>
+                                    {r.monto_nuevo.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}
+                                  </span></span>
+                                )}
+                              </div>
+                            )}
+
+                            {r.accion === 'EDICIÓN' && r.campo_modificado && (
+                              <div style={{ fontSize: '12px', color: MUTED }}>
+                                Campo modificado: <span style={{ color: TEXT }}>{r.campo_modificado}</span>
+                                {r.monto_anterior != null && (
+                                  <span> · {r.monto_anterior.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })} → {r.monto_nuevo?.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</span>
+                                )}
+                              </div>
+                            )}
+
+                            {r.accion === 'ELIMINACIÓN' && r.estado_anterior && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                                <span style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: '4px', padding: '2px 7px', color: TEXT }}>{r.estado_anterior}</span>
+                                <span style={{ color: MUTED }}>→</span>
+                                <span style={{ background: 'rgba(180,83,9,0.15)', border: '1px solid rgba(180,83,9,0.35)', borderRadius: '4px', padding: '2px 7px', color: '#d97706', fontWeight: 700 }}>{r.estado_nuevo || 'ERRADO'}</span>
+                              </div>
+                            )}
+
+                            {r.motivo && (
+                              <div style={{ fontSize: '12px', color: MUTED, marginTop: '3px' }}>
+                                Motivo: <span style={{ color: TEXT }}>{r.motivo}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

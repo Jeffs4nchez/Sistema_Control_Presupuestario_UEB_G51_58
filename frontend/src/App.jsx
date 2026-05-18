@@ -17,6 +17,7 @@ import EntidadRequiriente from './pages/EntidadRequiriente';
 import PresupuestoDisponible from './pages/PresupuestoDisponible';
 import Reportes from './pages/Reportes';
 import ReportePrint from './pages/ReportePrint';
+import Auditoria from './pages/Auditoria';
 import './App.css';
 import { useContext } from 'react';
 
@@ -69,6 +70,9 @@ function AppContent() {
 
         {/* Ruta para /dashboard/reportes */}
         <Route path="reportes" element={<Reportes />} />
+
+        {/* Ruta para /dashboard/auditoria */}
+        <Route path="auditoria" element={<Auditoria />} />
 
         {/* Ruta por defecto del dashboard */}
         <Route 

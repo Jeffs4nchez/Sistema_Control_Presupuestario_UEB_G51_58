@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Liquidacion;
 use App\Models\CertificacionItem;
+use App\Models\Auditoria;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
@@ -92,9 +93,52 @@ class LiquidacionController extends Controller
                 'estado'                => 'LIQUIDADO',
             ]);
 
+            $liquidacion->load(['item', 'certificacionItem.certificacion']);
+
+            try {
+                $u    = Auth::user();
+                $cert = $liquidacion->certificacionItem?->certificacion;
+                $uid    = $u?->id_usuario ?? null;
+                $nombre = $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema';
+
+                Auditoria::create([
+                    'id_certificacion'   => $cert?->id_certificacion ?? 0,
+                    'numero_certificado' => $cert?->numero_certificado ?? 'N/A',
+                    'id_usuario'         => $uid,
+                    'nombre_usuario'     => $nombre,
+                    'accion'             => 'CREACION_LIQUIDACION',
+                    'campo_modificado'   => $request->memorando,
+                    'monto_nuevo'        => $request->cantidad_liquidacion,
+                    'fecha_hora'         => now(),
+                ]);
+
+                // Cambio automático a LIQUIDADO si el 100% está cubierto
+                if ($cert && $cert->estado !== 'LIQUIDADO') {
+                    $totalC = $this->totalCertificado($cert->id_certificacion);
+                    $totalL = $this->totalLiquidado($cert->id_certificacion);
+                    if ($totalC > 0 && $totalL >= $totalC) {
+                        $estadoAnterior = $cert->estado;
+                        DB::table('certificacion')->where('id_certificacion', $cert->id_certificacion)->update(['estado' => 'LIQUIDADO']);
+                        Auditoria::create([
+                            'id_certificacion'   => $cert->id_certificacion,
+                            'numero_certificado' => $cert->numero_certificado,
+                            'id_usuario'         => $uid,
+                            'nombre_usuario'     => $nombre,
+                            'accion'             => 'CAMBIO_ESTADO',
+                            'estado_anterior'    => $estadoAnterior,
+                            'estado_nuevo'       => 'LIQUIDADO',
+                            'campo_modificado'   => 'estado',
+                            'fecha_hora'         => now(),
+                        ]);
+                    }
+                }
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::liquidacion store error: ' . $ae->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
-                'data'    => $liquidacion->load(['item', 'certificacionItem.certificacion']),
+                'data'    => $liquidacion,
                 'message' => 'Liquidación registrada exitosamente',
             ], 201);
 
@@ -149,6 +193,47 @@ class LiquidacionController extends Controller
             $liquidacion->id_usuario_anulacion = $usuario?->id_usuario ?? null;
             $liquidacion->save();
 
+            try {
+                $certItem = CertificacionItem::with('certificacion')->find($liquidacion->id_certificacion_item);
+                $cert     = $certItem?->certificacion;
+                $uid    = $usuario?->id_usuario ?? null;
+                $nombre = $usuario ? trim($usuario->nombres . ' ' . $usuario->apellidos) : 'Sistema';
+
+                Auditoria::create([
+                    'id_certificacion'   => $cert?->id_certificacion ?? 0,
+                    'numero_certificado' => $cert?->numero_certificado ?? 'N/A',
+                    'id_usuario'         => $uid,
+                    'nombre_usuario'     => $nombre,
+                    'accion'             => 'ANULACION_LIQUIDACION',
+                    'campo_modificado'   => $liquidacion->memorando,
+                    'motivo'             => $request->motivo_anulacion,
+                    'monto_anterior'     => $liquidacion->cantidad_liquidacion,
+                    'fecha_hora'         => now(),
+                ]);
+
+                // Si el cert estaba LIQUIDADO y ya no tiene cobertura completa → revertir a APROBADO
+                if ($cert && $cert->estado === 'LIQUIDADO') {
+                    $totalC = $this->totalCertificado($cert->id_certificacion);
+                    $totalL = $this->totalLiquidado($cert->id_certificacion);
+                    if ($totalL < $totalC) {
+                        DB::table('certificacion')->where('id_certificacion', $cert->id_certificacion)->update(['estado' => 'APROBADO']);
+                        Auditoria::create([
+                            'id_certificacion'   => $cert->id_certificacion,
+                            'numero_certificado' => $cert->numero_certificado,
+                            'id_usuario'         => $uid,
+                            'nombre_usuario'     => $nombre,
+                            'accion'             => 'CAMBIO_ESTADO',
+                            'estado_anterior'    => 'LIQUIDADO',
+                            'estado_nuevo'       => 'APROBADO',
+                            'campo_modificado'   => 'estado',
+                            'fecha_hora'         => now(),
+                        ]);
+                    }
+                }
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::anular error: ' . $ae->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'data'    => $liquidacion,
@@ -157,6 +242,22 @@ class LiquidacionController extends Controller
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    private function totalCertificado(int $idCert): float
+    {
+        return (float) DB::table('certificacion_items')
+            ->where('id_certificacion', $idCert)
+            ->sum('monto');
+    }
+
+    private function totalLiquidado(int $idCert): float
+    {
+        return (float) DB::table('liquidaciones')
+            ->join('certificacion_items', 'liquidaciones.id_certificacion_item', '=', 'certificacion_items.id_certificacion_item')
+            ->where('certificacion_items.id_certificacion', $idCert)
+            ->where('liquidaciones.estado', '!=', 'ANULADA')
+            ->sum('liquidaciones.cantidad_liquidacion');
     }
 
     /**
@@ -185,7 +286,8 @@ class LiquidacionController extends Controller
                     'f.cod_fuente',
                     'f.nombre_fuente'
                 )
-                ->where('ci.monto', '>', 0);
+                ->where('ci.monto', '>', 0)
+                ->where('c.estado', '!=', 'ERRADO');
 
             if ($search) {
                 $query->where(function ($q) use ($search) {
@@ -264,7 +366,8 @@ class LiquidacionController extends Controller
                     'f.cod_fuente',
                     'f.nombre_fuente'
                 )
-                ->where('ci.monto', '>', 0);
+                ->where('ci.monto', '>', 0)
+                ->where('c.estado', '!=', 'ERRADO');
 
             if ($search) {
                 $query->where(function ($q) use ($search) {

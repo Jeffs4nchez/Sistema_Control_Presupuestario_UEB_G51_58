@@ -17,6 +17,8 @@ use App\Models\NaturalezaPrestacion;
 use App\Models\EntidadRequiriente;
 use App\Models\CedulaPresupuestaria;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use App\Models\Auditoria;
 use Carbon\Carbon;
 
 class CertificacionController extends Controller
@@ -46,6 +48,9 @@ class CertificacionController extends Controller
 
             if ($estado) {
                 $query->where('estado', $estado);
+            } else {
+                // Ocultar lógicamente eliminados salvo filtro explícito
+                $query->where('estado', '!=', 'ERRADO');
             }
 
             if ($desde) {
@@ -183,6 +188,22 @@ class CertificacionController extends Controller
 
             DB::commit();
 
+            try {
+                $u = Auth::user();
+                Auditoria::create([
+                    'id_certificacion'   => $certificado->id_certificacion,
+                    'numero_certificado' => $certificado->numero_certificado,
+                    'id_usuario'         => $u?->id_usuario ?? null,
+                    'nombre_usuario'     => $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema',
+                    'accion'             => 'CREACIÓN',
+                    'estado_nuevo'       => $certificado->estado,
+                    'monto_nuevo'        => (float) $certificado->items()->sum('monto'),
+                    'fecha_hora'         => now(),
+                ]);
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::store error: ' . $ae->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Certificado creado exitosamente con ' . count($request->items) . ' item(s)',
@@ -253,6 +274,8 @@ class CertificacionController extends Controller
                 ], 422);
             }
 
+            $montoAnterior = (float) $certificado->items()->sum('monto');
+
             // Crear registro en tabla intermedia
             $item = CertificacionItem::create([
                 'id_certificacion' => $idCertificacion,
@@ -270,6 +293,24 @@ class CertificacionController extends Controller
 
             // Actualizar monto total del certificado
             $certificado->actualizarMontoTotal();
+            $montoNuevo = (float) $certificado->items()->sum('monto');
+
+            try {
+                $u = Auth::user();
+                Auditoria::create([
+                    'id_certificacion'   => $certificado->id_certificacion,
+                    'numero_certificado' => $certificado->numero_certificado,
+                    'id_usuario'         => $u?->id_usuario ?? null,
+                    'nombre_usuario'     => $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema',
+                    'accion'             => 'EDICIÓN',
+                    'monto_anterior'     => $montoAnterior,
+                    'monto_nuevo'        => $montoNuevo,
+                    'campo_modificado'   => 'monto_total',
+                    'fecha_hora'         => now(),
+                ]);
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::agregarItem error: ' . $ae->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -295,14 +336,34 @@ class CertificacionController extends Controller
         ]);
 
         try {
+            $certificado = Certificacion::findOrFail($idCertificacion);
+            $montoAnterior = (float) $certificado->items()->sum('monto');
+
             $item = CertificacionItem::where('id_certificacion', $idCertificacion)
                                       ->where('id_certificacion_item', $idItem)
                                       ->firstOrFail();
 
             $item->update(['monto' => $request->monto]);
 
-            $certificado = Certificacion::findOrFail($idCertificacion);
             $certificado->actualizarMontoTotal();
+            $montoNuevo = (float) $certificado->items()->sum('monto');
+
+            try {
+                $u = Auth::user();
+                Auditoria::create([
+                    'id_certificacion'   => $certificado->id_certificacion,
+                    'numero_certificado' => $certificado->numero_certificado,
+                    'id_usuario'         => $u?->id_usuario ?? null,
+                    'nombre_usuario'     => $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema',
+                    'accion'             => 'EDICIÓN',
+                    'monto_anterior'     => $montoAnterior,
+                    'monto_nuevo'        => $montoNuevo,
+                    'campo_modificado'   => 'monto_total',
+                    'fecha_hora'         => now(),
+                ]);
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::actualizarItem error: ' . $ae->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -324,6 +385,7 @@ class CertificacionController extends Controller
     {
         try {
             $certificado = Certificacion::findOrFail($idCertificacion);
+            $montoAnterior = (float) $certificado->items()->sum('monto');
 
             $item = CertificacionItem::where('id_certificacion', $idCertificacion)
                                       ->where('id_certificacion_item', $idItem)
@@ -333,6 +395,24 @@ class CertificacionController extends Controller
 
             // Actualizar monto total del certificado
             $certificado->actualizarMontoTotal();
+            $montoNuevo = (float) $certificado->items()->sum('monto');
+
+            try {
+                $u = Auth::user();
+                Auditoria::create([
+                    'id_certificacion'   => $certificado->id_certificacion,
+                    'numero_certificado' => $certificado->numero_certificado,
+                    'id_usuario'         => $u?->id_usuario ?? null,
+                    'nombre_usuario'     => $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema',
+                    'accion'             => 'EDICIÓN',
+                    'monto_anterior'     => $montoAnterior,
+                    'monto_nuevo'        => $montoNuevo,
+                    'campo_modificado'   => 'monto_total',
+                    'fecha_hora'         => now(),
+                ]);
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::removerItem error: ' . $ae->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -366,7 +446,11 @@ class CertificacionController extends Controller
 
         try {
             $certificado = Certificacion::findOrFail($id);
-            $certificado->update($request->only([
+
+            $estadoAnterior = $certificado->estado;
+            $montoAnterior  = $certificado->monto_total;
+
+            $fields = $request->only([
                 'descripcion',
                 'unid_ejecutora',
                 'des_u_ejecutora',
@@ -375,7 +459,57 @@ class CertificacionController extends Controller
                 'tipo_doc_respaldo',
                 'clase_doc_respaldo',
                 'estado'
-            ]));
+            ]);
+
+            $certificado->update($fields);
+
+            try {
+                $u      = Auth::user();
+                $uid    = $u?->id_usuario ?? null;
+                $nombre = $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema';
+                $changed = $certificado->getChanges();
+
+                if (isset($changed['estado'])) {
+                    Auditoria::create([
+                        'id_certificacion'   => $certificado->id_certificacion,
+                        'numero_certificado' => $certificado->numero_certificado,
+                        'id_usuario'         => $uid,
+                        'nombre_usuario'     => $nombre,
+                        'accion'             => 'CAMBIO_ESTADO',
+                        'estado_anterior'    => $estadoAnterior,
+                        'estado_nuevo'       => $changed['estado'],
+                        'campo_modificado'   => 'estado',
+                        'fecha_hora'         => now(),
+                    ]);
+                } elseif (isset($changed['monto_total'])) {
+                    Auditoria::create([
+                        'id_certificacion'   => $certificado->id_certificacion,
+                        'numero_certificado' => $certificado->numero_certificado,
+                        'id_usuario'         => $uid,
+                        'nombre_usuario'     => $nombre,
+                        'accion'             => 'EDICIÓN',
+                        'monto_anterior'     => $montoAnterior,
+                        'monto_nuevo'        => $changed['monto_total'],
+                        'campo_modificado'   => 'monto_total',
+                        'fecha_hora'         => now(),
+                    ]);
+                } elseif (!empty($changed)) {
+                    $campo = array_key_first(array_diff_key($changed, ['updated_at' => true]));
+                    if ($campo) {
+                        Auditoria::create([
+                            'id_certificacion'   => $certificado->id_certificacion,
+                            'numero_certificado' => $certificado->numero_certificado,
+                            'id_usuario'         => $uid,
+                            'nombre_usuario'     => $nombre,
+                            'accion'             => 'EDICIÓN',
+                            'campo_modificado'   => $campo,
+                            'fecha_hora'         => now(),
+                        ]);
+                    }
+                }
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::update error: ' . $ae->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -398,11 +532,30 @@ class CertificacionController extends Controller
     {
         try {
             $certificado = Certificacion::findOrFail($id);
-            $certificado->delete();
+
+            try {
+                $u = Auth::user();
+                Auditoria::create([
+                    'id_certificacion'   => $certificado->id_certificacion,
+                    'numero_certificado' => $certificado->numero_certificado,
+                    'id_usuario'         => $u?->id_usuario ?? null,
+                    'nombre_usuario'     => $u ? trim($u->nombres . ' ' . $u->apellidos) : 'Sistema',
+                    'accion'             => 'ELIMINACIÓN',
+                    'estado_anterior'    => $certificado->estado,
+                    'estado_nuevo'       => 'ERRADO',
+                    'fecha_hora'         => now(),
+                ]);
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::destroy error: ' . $ae->getMessage());
+            }
+
+            // Soft delete lógico: cambia estado a ERRADO sin borrar de la BD
+            $certificado->estado = 'ERRADO';
+            $certificado->save();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Certificado eliminado exitosamente'
+                'message' => 'Certificado marcado como ERRADO exitosamente'
             ], 200);
 
         } catch (\Exception $e) {

@@ -5,7 +5,7 @@ import { theme } from '../config/theme';
 import {
   LayoutDashboard, Users, LogOut, TrendingUp, FileText,
   Table2, CheckCircle2, Menu, ChevronLeft, ChevronRight, BarChart2, KeyRound,
-  Building2, PieChart, FileDown,
+  Building2, PieChart, FileDown, Clock,
 } from 'lucide-react';
 import CambiarContrasenaModal from '../components/CambiarContrasenaModal';
 import logo from '../assets/logo.png';
@@ -58,6 +58,7 @@ export const Dashboard = () => {
     { label: 'Entidad Requirente',         path: '/dashboard/entidad-requirente',      icon: <Building2 size={18} /> },
     { label: 'Presupuesto Disponible',     path: '/dashboard/presupuesto-disponible',  icon: <PieChart size={18} /> },
     { label: 'Reportes',                   path: '/dashboard/reportes',                icon: <FileDown size={18} /> },
+    { label: 'Auditoría',                  path: '/dashboard/auditoria',               icon: <Clock size={18} /> },
   ];
 
   const isActive = (path) =>
