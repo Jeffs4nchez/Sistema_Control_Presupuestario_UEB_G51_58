@@ -8,6 +8,6 @@ class EntidadRequiriente extends Model
 {
     protected $table = 'entidad_requiriente';
     protected $primaryKey = 'id_entidad_requiriente';
-    protected $fillable = ['nombre', 'nombre_entidad', 'responsable_entidad', 'correo_institucional', 'memorando'];
+    protected $fillable = ['nombre_entidad', 'responsable_entidad', 'correo_institucional'];
     public $timestamps = true;
 }

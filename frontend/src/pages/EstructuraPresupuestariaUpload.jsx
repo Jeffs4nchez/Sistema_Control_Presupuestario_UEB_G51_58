@@ -1,17 +1,26 @@
 import { useState, useEffect } from "react"
 import { useAuth } from '../contexts/AuthContext'
-import { theme } from '../config/theme'
-import { Upload, FileText, CheckCircle, AlertCircle, BarChart3, Layers, GitBranch, Activity, Package } from "lucide-react"
+import { motion, AnimatePresence } from 'framer-motion'
+import { Upload, FileText, CheckCircle, AlertCircle, BarChart3, Layers, GitBranch, Activity, Package, X, Lock } from "lucide-react"
+import { useFiscalYear } from '../contexts/FiscalYearContext'
 
-const CARD   = theme.colors.dark['800']
-const BORDER = theme.colors.dark['700']
-const ELEV   = theme.colors.dark['600']
-const ACCENT = theme.colors.accent.blue
-const TEXT   = 'rgba(255,255,255,0.88)'
-const MUTED  = 'rgba(255,255,255,0.45)'
+const CARD   = 'rgba(255,255,255,0.90)'
+const BORDER = 'rgba(46,108,164,0.14)'
+const BG     = '#f8fafd'
+const ACCENT = '#2e6ca4'
+const GREEN  = '#059669'
+const RED    = '#b91c1c'
+const GOLD   = '#d97706'
+const TEXT   = '#1a3a5c'
+const MUTED  = '#5a7a9f'
+
+const ACCENT_COLORS = {
+  blue: '#2e6ca4', teal: '#0891b2', green: '#059669', amber: '#d97706', red: '#b91c1c',
+}
 
 export default function EstructuraPresupuestariaUpload() {
   const { token } = useAuth()
+  const { isReadOnly, selectedCedula } = useFiscalYear()
   const [file,           setFile]           = useState(null)
   const [loading,        setLoading]        = useState(false)
   const [error,          setError]          = useState(null)
@@ -36,11 +45,8 @@ export default function EstructuraPresupuestariaUpload() {
       })
       const data = await res.json()
       if (data.status === 'success' || data.success) setSummary(data.data || data)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSummaryLoading(false)
-    }
+    } catch (err) { console.error(err) }
+    finally { setSummaryLoading(false) }
   }
 
   const validateFile = (f) => {
@@ -55,6 +61,9 @@ export default function EstructuraPresupuestariaUpload() {
     try {
       const formData = new FormData()
       formData.append('csv_file', fileToUpload)
+      if (selectedCedula?.id_cedula_presupuestaria) {
+        formData.append('id_cedula_presupuestaria', selectedCedula.id_cedula_presupuestaria)
+      }
       const res = await fetch(`${import.meta.env.VITE_API_URL}/estructura-presupuestaria/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -65,127 +74,149 @@ export default function EstructuraPresupuestariaUpload() {
         setSuccess(true); setFile(null); setShowUploadForm(false)
         setTimeout(() => setSuccess(false), 5000)
         fetchSummary()
-      } else {
-        setError(data.message || 'Error al cargar el archivo')
-      }
-    } catch (err) {
-      setError('Error: ' + (err instanceof Error ? err.message : 'Unknown error'))
-    } finally { setLoading(false) }
+      } else { setError(data.message || 'Error al cargar el archivo') }
+    } catch (err) { setError('Error: ' + (err instanceof Error ? err.message : 'Unknown error')) }
+    finally { setLoading(false) }
   }
 
   const handleUpload = (e) => { e.preventDefault(); if (file) uploadFile(file) }
 
   const P = isMobile ? '20px' : '28px'
   const summaryItems = summary ? [
-    { label: 'Programas',    value: summary.programas_count    || 0, icon: <BarChart3 size={18} />,  color: ACCENT },
-    { label: 'Subprogramas', value: summary.subprogramas_count || 0, icon: <Layers size={18} />,     color: theme.colors.accent.teal },
-    { label: 'Proyectos',    value: summary.proyectos_count    || 0, icon: <GitBranch size={18} />,  color: theme.colors.accent.gold },
-    { label: 'Actividades',  value: summary.actividades_count  || 0, icon: <Activity size={18} />,   color: theme.colors.accent.green },
-    { label: 'Items',        value: summary.items_count        || 0, icon: <Package size={18} />,    color: theme.colors.accent.red },
+    { label: 'Programas',    value: summary.programas_count    || 0, icon: <BarChart3 size={20} />, color: ACCENT_COLORS.blue  },
+    { label: 'Subprogramas', value: summary.subprogramas_count || 0, icon: <Layers size={20} />,    color: ACCENT_COLORS.teal  },
+    { label: 'Proyectos',    value: summary.proyectos_count    || 0, icon: <GitBranch size={20} />, color: ACCENT_COLORS.amber },
+    { label: 'Actividades',  value: summary.actividades_count  || 0, icon: <Activity size={20} />,  color: ACCENT_COLORS.green },
+    { label: 'Items',        value: summary.items_count        || 0, icon: <Package size={20} />,   color: ACCENT_COLORS.red   },
   ] : []
 
   return (
-    <div style={{ background: theme.colors.dark['900'], minHeight: '100%', padding: P, fontFamily: theme.typography.fontFamily }}>
+    <div style={{ minHeight: '100%', background: 'var(--page-bg)', padding: P, fontFamily: 'var(--font-primary)' }}>
 
       {/* Title */}
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: isMobile ? '18px' : '20px', fontWeight: 700, color: TEXT, letterSpacing: '-0.02em' }}>
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: '20px' }}>
+        <h1 style={{ margin: '0 0 4px', fontSize: isMobile ? '18px' : '20px', fontWeight: 800, color: TEXT, letterSpacing: '-0.02em' }}>
           Cargar Estructura Presupuestaria
         </h1>
         <p style={{ margin: 0, fontSize: '13px', color: MUTED }}>Importar datos presupuestarios desde archivo CSV</p>
-      </div>
+      </motion.div>
 
       {/* Messages */}
-      {error && (
-        <div style={{ background: 'rgba(196,30,58,0.12)', border: '1px solid rgba(196,30,58,0.35)', borderRadius: theme.border.radiusMd, padding: '10px 14px', marginBottom: '16px', color: '#ff6b7a', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <AlertCircle size={15} /> {error}
-        </div>
-      )}
-      {success && (
-        <div style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: theme.border.radiusMd, padding: '10px 14px', marginBottom: '16px', color: '#34d399', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <CheckCircle size={15} /> Archivo cargado exitosamente
-        </div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            style={{ background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', color: RED, fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><AlertCircle size={14} /> {error}</div>
+            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer' }}><X size={14} /></button>
+          </motion.div>
+        )}
+        {success && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', color: GREEN, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}
+          >
+            <CheckCircle size={14} /> Archivo cargado exitosamente
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Upload card */}
-      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '24px', marginBottom: '20px' }}>
-        {!showUploadForm ? (
-          <div style={{ textAlign: 'center', padding: '12px 0' }}>
-            <div style={{ width: '56px', height: '56px', borderRadius: theme.border.radiusMd, background: `${ACCENT}1a`, border: `1px solid ${ACCENT}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: ACCENT }}>
-              <Upload size={24} />
-            </div>
-            <h2 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: TEXT }}>Importar Archivo CSV</h2>
-            <p style={{ margin: '0 0 20px', fontSize: '13px', color: MUTED }}>Carga un archivo CSV con la estructura presupuestaria</p>
-            <button
-              onClick={() => setShowUploadForm(true)}
-              style={{ padding: '9px 20px', background: ACCENT, color: '#fff', border: 'none', borderRadius: theme.border.radiusMd, cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: theme.typography.fontFamily, transition: 'all 0.15s ease' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#1e90d4' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = ACCENT }}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        style={{ background: CARD, border: `1px solid ${isReadOnly ? 'rgba(217,119,6,0.25)' : BORDER}`, borderRadius: '16px', padding: '28px', marginBottom: '20px', backdropFilter: 'blur(12px)', boxShadow: '0 4px 24px rgba(26,58,92,0.10)' }}
+      >
+        <AnimatePresence mode="wait">
+          {isReadOnly ? (
+            <motion.div key="readonly" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              style={{ textAlign: 'center', padding: '16px 0' }}
             >
-              Seleccionar Archivo
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <label htmlFor="file-input" style={{
-              border: `2px dashed ${ACCENT}55`,
-              borderRadius: theme.border.radiusMd,
-              padding: '28px 20px',
-              textAlign: 'center',
-              background: `${ACCENT}08`,
-              cursor: 'pointer',
-              display: 'block',
-              transition: 'all 0.15s ease',
-            }}>
-              <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: 'none' }} id="file-input" />
-              <FileText size={32} style={{ color: ACCENT, margin: '0 auto 10px', display: 'block' }} />
-              <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: file ? TEXT : MUTED }}>
-                {file ? file.name : 'Haz clic para seleccionar un archivo CSV'}
+              <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(217,119,6,0.10)', border: '1px solid rgba(217,119,6,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <Lock size={28} color="#d97706" />
+              </div>
+              <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 800, color: '#d97706' }}>Año {selectedCedula?.anio} — Solo lectura</h2>
+              <p style={{ margin: 0, fontSize: '13px', color: MUTED, maxWidth: '380px', margin: '0 auto' }}>
+                No se puede cargar una nueva estructura presupuestaria para un año fiscal anterior. Solo es posible visualizar los datos ya registrados.
               </p>
-              {!file && <p style={{ margin: '4px 0 0', fontSize: '12px', color: MUTED }}>Solo archivos .csv</p>}
-            </label>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button
-                type="submit" disabled={!file || loading}
-                style={{ padding: '9px 20px', background: (!file || loading) ? ELEV : ACCENT, color: '#fff', border: 'none', borderRadius: theme.border.radiusMd, cursor: (!file || loading) ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 600, opacity: (!file || loading) ? 0.6 : 1, fontFamily: theme.typography.fontFamily }}
+            </motion.div>
+          ) : !showUploadForm ? (
+            <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ textAlign: 'center', padding: '12px 0' }}
+            >
+              <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(46,108,164,0.10)', border: '1px solid rgba(46,108,164,0.20)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+                <Upload size={28} color={ACCENT} />
+              </div>
+              <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 800, color: TEXT }}>Importar Archivo CSV</h2>
+              <p style={{ margin: '0 0 24px', fontSize: '13px', color: MUTED }}>Carga un archivo CSV con la estructura presupuestaria completa</p>
+              <motion.button whileHover={{ scale: 1.03, boxShadow: '0 8px 24px rgba(26,58,92,0.30)' }} whileTap={{ scale: 0.97 }}
+                onClick={() => setShowUploadForm(true)}
+                style={{ padding: '10px 24px', background: 'linear-gradient(135deg, #1a3a5c, #2e6ca4)', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-primary)', boxShadow: '0 4px 16px rgba(26,58,92,0.25)' }}
               >
-                {loading ? 'Cargando...' : 'Subir Archivo'}
-              </button>
-              <button
-                type="button" onClick={() => { setShowUploadForm(false); setFile(null); setError(null) }}
-                style={{ padding: '9px 20px', background: ELEV, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, cursor: 'pointer', fontSize: '13px', fontFamily: theme.typography.fontFamily }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = TEXT }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = MUTED }}
+                Seleccionar Archivo
+              </motion.button>
+            </motion.div>
+          ) : (
+            <motion.form key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+            >
+              <label htmlFor="file-input"
+                style={{ border: `2px dashed rgba(46,108,164,0.35)`, borderRadius: '12px', padding: '32px 20px', textAlign: 'center', background: 'rgba(46,108,164,0.05)', cursor: 'pointer', display: 'block', transition: 'all 0.18s ease' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(46,108,164,0.08)'; e.currentTarget.style.borderColor = 'rgba(46,108,164,0.55)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(46,108,164,0.05)'; e.currentTarget.style.borderColor = 'rgba(46,108,164,0.35)' }}
               >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
+                <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: 'none' }} id="file-input" />
+                <FileText size={36} style={{ color: ACCENT, margin: '0 auto 12px', display: 'block' }} />
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: file ? TEXT : MUTED }}>
+                  {file ? file.name : 'Haz clic para seleccionar un archivo CSV'}
+                </p>
+                {!file && <p style={{ margin: '6px 0 0', fontSize: '12px', color: MUTED }}>Solo archivos .csv</p>}
+                {file && <p style={{ margin: '6px 0 0', fontSize: '12px', color: GREEN }}>✓ Archivo seleccionado</p>}
+              </label>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <motion.button whileHover={file && !loading ? { scale: 1.02, boxShadow: '0 8px 24px rgba(26,58,92,0.30)' } : {}} whileTap={file && !loading ? { scale: 0.98 } : {}}
+                  type="submit" disabled={!file || loading}
+                  style={{ padding: '10px 24px', background: (!file || loading) ? 'rgba(26,58,92,0.08)' : 'linear-gradient(135deg, #1a3a5c, #2e6ca4)', color: (!file || loading) ? MUTED : '#fff', border: 'none', borderRadius: '10px', cursor: (!file || loading) ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-primary)', opacity: (!file || loading) ? 0.7 : 1, boxShadow: (!file || loading) ? 'none' : '0 4px 16px rgba(26,58,92,0.25)', transition: 'all 0.18s ease' }}
+                >
+                  {loading ? 'Cargando...' : 'Subir Archivo'}
+                </motion.button>
+                <button type="button" onClick={() => { setShowUploadForm(false); setFile(null); setError(null) }}
+                  style={{ padding: '10px 20px', background: 'rgba(26,58,92,0.06)', color: MUTED, border: '1px solid rgba(26,58,92,0.12)', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontFamily: 'var(--font-primary)', transition: 'all 0.15s ease' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = TEXT }}
+                  onMouseLeave={e => { e.currentTarget.style.color = MUTED }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.form>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Summary */}
       {summaryLoading ? (
-        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '24px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
+        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '24px', textAlign: 'center', color: MUTED, fontSize: '13px', backdropFilter: 'blur(12px)' }}>
+          <div style={{ width: '28px', height: '28px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: ACCENT, borderRadius: '50%', margin: '0 auto 10px', animation: 'spin 0.8s linear infinite' }} />
           Cargando resumen...
         </div>
       ) : summaryItems.length > 0 && (
-        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '20px' }}>
-          <p style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            Resumen Actual
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '16px', padding: '22px', backdropFilter: 'blur(12px)', boxShadow: '0 2px 16px rgba(26,58,92,0.06)' }}
+        >
+          <p style={{ margin: '0 0 16px', fontSize: '11px', fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            Resumen de Datos Cargados
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '10px' }}>
             {summaryItems.map((item, idx) => (
-              <div key={idx} style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '14px 16px', textAlign: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '8px' }}>
-                  <span style={{ color: item.color, display: 'flex' }}>{item.icon}</span>
+              <motion.div key={idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + idx * 0.05 }}
+                style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '16px', textAlign: 'center', borderTop: `3px solid ${item.color}` }}
+              >
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', color: item.color }}>
+                  {item.icon}
                 </div>
-                <p style={{ margin: '0 0 4px', fontSize: '11px', color: MUTED }}>{item.label}</p>
-                <p style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: TEXT }}>{item.value}</p>
-              </div>
+                <p style={{ margin: '0 0 4px', fontSize: '11px', color: MUTED, fontWeight: 600 }}>{item.label}</p>
+                <p style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: TEXT }}>{item.value.toLocaleString()}</p>
+              </motion.div>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
     </div>
   )

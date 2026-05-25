@@ -116,6 +116,8 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::get('/reportes/certificaciones/json',     [ReporteController::class, 'certificacionesJson']);
     Route::get('/reportes/liquidaciones/json',       [ReporteController::class, 'liquidacionesJson']);
     Route::get('/reportes/presupuesto/json',         [ReporteController::class, 'presupuestoJson']);
+    Route::get('/reportes/auditoria/csv',            [ReporteController::class, 'auditoriaCsv']);
+    Route::get('/reportes/auditoria/json',           [ReporteController::class, 'auditoriaJson']);
 });
 
 // Presupuesto disponible (HU-09) - público para el frontend

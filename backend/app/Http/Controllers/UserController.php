@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 
 class UserController extends Controller
 {
@@ -44,51 +45,87 @@ class UserController extends Controller
     public function store(Request $request)
     {
         try {
-            // Validar datos
             $validated = $request->validate([
-                'nombres' => 'required|string|max:100',
-                'apellidos' => 'required|string|max:100',
+                'nombres'              => 'required|string|max:100',
+                'apellidos'            => 'required|string|max:100',
                 'correo_institucional' => 'required|string|email|max:100|unique:usuarios,correo_institucional',
-                'contrasena' => 'required|string|min:6',
-                'cargo' => 'required|string|in:Director(a) financiera,Analista de presupuesto,Director(a) de talento humano,Rector',
-                'estado' => 'required|string|in:activo,inactivo'
+                'cargo'                => 'required|string|in:Director(a) financiera,Analista de presupuesto,Director(a) de talento humano,Rector',
+                'estado'               => 'required|string|in:activo,inactivo',
             ]);
 
-            // Crear usuario con contraseña temporal (debe cambiarla al primer login)
+            $contrasenaTemp = $this->generarContrasenaAleatoria();
+
             $usuario = User::create([
                 'nombres'              => $validated['nombres'],
                 'apellidos'            => $validated['apellidos'],
                 'correo_institucional' => $validated['correo_institucional'],
-                'contrasena'           => Hash::make($validated['contrasena']),
+                'contrasena'           => Hash::make($contrasenaTemp),
                 'cargo'                => $validated['cargo'],
                 'estado'               => $validated['estado'],
                 'contrasena_temporal'  => true,
             ]);
 
+            try {
+                $this->enviarCredencialesEmail($usuario, $contrasenaTemp);
+            } catch (\Exception $mailEx) {
+                $usuario->delete();
+                \Log::error('Error enviando credenciales: ' . $mailEx->getMessage());
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'No se pudo enviar el correo con las credenciales. Verifique la configuración de correo.',
+                ], 500);
+            }
+
             return response()->json([
-                'status' => 'success',
-                'message' => 'Usuario creado correctamente',
-                'data' => [
-                    'id_usuario' => $usuario->id_usuario,
-                    'nombres' => $usuario->nombres,
-                    'apellidos' => $usuario->apellidos,
+                'status'  => 'success',
+                'message' => 'Usuario creado. Se envió un correo con las credenciales de acceso.',
+                'data'    => [
+                    'id_usuario'           => $usuario->id_usuario,
+                    'nombres'              => $usuario->nombres,
+                    'apellidos'            => $usuario->apellidos,
                     'correo_institucional' => $usuario->correo_institucional,
-                    'cargo' => $usuario->cargo,
-                    'estado' => $usuario->estado
-                ]
+                    'cargo'                => $usuario->cargo,
+                    'estado'               => $usuario->estado,
+                ],
             ], 201);
         } catch (ValidationException $e) {
             return response()->json([
-                'status' => 'error',
+                'status'  => 'error',
                 'message' => 'Error de validación',
-                'errors' => $e->errors()
+                'errors'  => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Error al crear usuario: ' . $e->getMessage()
+                'status'  => 'error',
+                'message' => 'Error al crear usuario: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function generarContrasenaAleatoria(int $length = 10): string
+    {
+        $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        $password = '';
+        for ($i = 0; $i < $length; $i++) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+        return $password;
+    }
+
+    private function enviarCredencialesEmail(User $usuario, string $contrasenaTemp): void
+    {
+        $body = "Hola {$usuario->nombres} {$usuario->apellidos},\n\n"
+              . "Tu cuenta en el Sistema de Control Presupuestario UEB ha sido creada exitosamente.\n\n"
+              . "Tus credenciales de acceso son:\n"
+              . "  Usuario: {$usuario->correo_institucional}\n"
+              . "  Contraseña temporal: {$contrasenaTemp}\n\n"
+              . "IMPORTANTE: Al ingresar por primera vez el sistema te pedirá que establezcas una nueva contraseña.\n\n"
+              . "Sistema de Control Presupuestario — UEB";
+
+        Mail::raw($body, function ($message) use ($usuario) {
+            $message->to($usuario->correo_institucional, "{$usuario->nombres} {$usuario->apellidos}")
+                    ->subject('Bienvenido al Sistema — Tus credenciales de acceso — UEB');
+        });
     }
 
     /**

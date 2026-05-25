@@ -2,60 +2,60 @@ import { useState, useEffect } from "react"
 import axios from "axios"
 import Cookies from "js-cookie"
 import { useNavigate } from "react-router-dom"
-import { theme } from '../config/theme'
-import { ChevronLeft, ChevronRight, Trash2, Edit2, Eye, BarChart2, Printer, Search, X, RefreshCw, Clock } from 'lucide-react'
+import { useFiscalYear } from '../contexts/FiscalYearContext'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronLeft, ChevronRight, Trash2, Edit2, Eye, BarChart2, Printer, Search, RefreshCw, Clock, X, CheckCircle, AlertCircle } from 'lucide-react'
 import PrintCertificacion from './PrintCertificacion'
 import EditCertificacion from './EditCertificacion'
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api"
 
-const BG     = theme.colors.dark['900']
-const CARD   = theme.colors.dark['800']
-const BORDER = theme.colors.dark['700']
-const ELEV   = theme.colors.dark['600']
-const ACCENT = theme.colors.accent.blue
-const TEXT   = 'rgba(255,255,255,0.88)'
-const MUTED  = 'rgba(255,255,255,0.45)'
-const HOVER  = theme.colors.dark['500']
+const CARD   = 'rgba(255,255,255,0.90)'
+const BORDER = 'rgba(46,108,164,0.14)'
+const BG     = '#f8fafd'
+const ACCENT = '#2e6ca4'
+const GREEN  = '#059669'
+const RED    = '#b91c1c'
+const GOLD   = '#d97706'
+const TEXT   = '#1a3a5c'
+const MUTED  = '#5a7a9f'
 
 const INPUT_S = {
   padding: '8px 11px',
-  background: ELEV,
-  border: `1px solid ${BORDER}`,
-  borderRadius: theme.border.radiusMd,
+  background: BG,
+  border: '1px solid rgba(46,108,164,0.22)',
+  borderRadius: '8px',
   color: TEXT,
   fontSize: '13px',
-  fontFamily: theme.typography.fontFamily,
+  fontFamily: 'var(--font-primary)',
   outline: 'none',
   width: '100%',
   boxSizing: 'border-box',
 }
 
 const estadoMeta = {
-  PENDIENTE:  { label: 'Pendiente',  bg: 'rgba(217,119,6,0.14)',   border: 'rgba(217,119,6,0.35)',   color: '#fbbf24' },
-  APROBADO:   { label: 'Aprobado',   bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.35)',  color: '#34d399' },
-  RECHAZADO:  { label: 'Rechazado',  bg: 'rgba(196,30,58,0.12)',   border: 'rgba(196,30,58,0.35)',   color: '#ff6b7a' },
-  LIQUIDADO:  { label: 'Liquidado',  bg: 'rgba(96,165,250,0.12)',  border: 'rgba(96,165,250,0.35)',  color: '#60a5fa' },
-  ERRADO:     { label: 'Errado',     bg: 'rgba(120,53,15,0.18)',   border: 'rgba(180,83,9,0.35)',    color: '#d97706' },
+  PENDIENTE:  { label: 'Pendiente',  cls: 'badge badge-gold'   },
+  APROBADO:   { label: 'Aprobado',   cls: 'badge badge-green'  },
+  RECHAZADO:  { label: 'Rechazado',  cls: 'badge badge-red'    },
+  LIQUIDADO:  { label: 'Liquidado',  cls: 'badge badge-blue'   },
+  ERRADO:     { label: 'Errado',     cls: 'badge badge-orange' },
 }
 
 function EstadoBadge({ estado }) {
-  const m = estadoMeta[estado] || { label: estado, bg: `${ELEV}`, border: BORDER, color: MUTED }
-  return (
-    <span style={{
-      display: 'inline-block', padding: '3px 9px',
-      background: m.bg, border: `1px solid ${m.border}`,
-      borderRadius: theme.border.radiusFull,
-      fontSize: '11px', fontWeight: 700, color: m.color,
-      whiteSpace: 'nowrap',
-    }}>
-      {m.label}
-    </span>
-  )
+  const m = estadoMeta[estado] || { label: estado, cls: 'badge' }
+  return <span className={m.cls}>{m.label}</span>
 }
+
+const parseMonto = (v) => {
+  if (!v && v !== 0) return 0
+  return parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0
+}
+const fmtMonto = (v) =>
+  parseMonto(v).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
 
 export default function ListaCertificaciones({ refresh }) {
   const navigate = useNavigate()
+  const { selectedCedula, isReadOnly } = useFiscalYear()
   const [certificados, setCertificados] = useState([])
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState("")
@@ -70,41 +70,32 @@ export default function ListaCertificaciones({ refresh }) {
 
   const limit = 10
 
-const parseMonto = (v) => {
-  if (!v && v !== 0) return 0
-  // Backend sends Spanish-formatted strings like "1.234,56" (dot=thousands, comma=decimal)
-  return parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0
-}
-
-const fmtMonto = (v) =>
-  parseMonto(v).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
-
-  useEffect(() => { cargarCertificados() }, [refresh, page, search, estado])
+  useEffect(() => { setPage(1) }, [selectedCedula?.id_cedula_presupuestaria])
+  useEffect(() => { cargarCertificados() }, [refresh, page, search, estado, selectedCedula?.id_cedula_presupuestaria])
 
   const cargarCertificados = async () => {
-    setLoading(true)
-    setError("")
+    setLoading(true); setError("")
     try {
       const token = Cookies.get("auth_token")
-      if (!token) { setError("Sin token de autenticación. Inicia sesión nuevamente."); setLoading(false); return }
+      if (!token) { setError("Sin token de autenticación."); setLoading(false); return }
+      const params = { page, limit, search, estado }
+      if (selectedCedula) params.id_cedula_presupuestaria = selectedCedula.id_cedula_presupuestaria
       const res = await axios.get(`${API_BASE}/certificacion`, {
-        params: { page, limit, search, estado },
+        params,
         headers: { Authorization: `Bearer ${token}` },
       })
       setCertificados(res.data.data)
       setTotal(res.data.pagination.total)
     } catch (err) {
       setError(err.response?.data?.message || "Error al cargar certificados")
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   const handleHistorial = async (cert) => {
     setHistorial({ open: true, cert, data: [], loading: true, error: '' })
     try {
       const token = Cookies.get('auth_token')
-      const res   = await axios.get(`${API_BASE}/auditoria/certificacion/${cert.id_certificacion}`, {
+      const res = await axios.get(`${API_BASE}/auditoria/certificacion/${cert.id_certificacion}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       setHistorial(h => ({ ...h, data: res.data.data, loading: false }))
@@ -125,43 +116,47 @@ const fmtMonto = (v) =>
   const totalPages = Math.max(1, Math.ceil(total / limit))
 
   return (
-    <div style={{ fontFamily: theme.typography.fontFamily }}>
+    <div style={{ fontFamily: 'var(--font-primary)' }}>
 
       {/* Error */}
-      {error && (
-        <div style={{
-          background: 'rgba(196,30,58,0.12)', border: '1px solid rgba(196,30,58,0.35)',
-          borderRadius: theme.border.radiusMd, padding: '10px 14px', marginBottom: '16px',
-          color: '#ff6b7a', fontSize: '13px', display: 'flex', justifyContent: 'space-between',
-        }}>
-          <span>{error}</span>
-          <button onClick={() => setError("")} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>✕</button>
-        </div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            style={{ background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', color: RED, fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <AlertCircle size={14} />
+              <span>{error}</span>
+            </div>
+            <button onClick={() => setError("")} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer' }}><X size={14} /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Filters */}
-      <div style={{
-        background: CARD, border: `1px solid ${BORDER}`,
-        borderRadius: theme.border.radiusMd, padding: '16px',
-        marginBottom: '14px',
-        display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end',
-      }}>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '16px', marginBottom: '14px', backdropFilter: 'blur(12px)', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end', boxShadow: '0 2px 16px rgba(26,58,92,0.06)' }}
+      >
         <div style={{ flex: '1 1 180px', minWidth: '150px' }}>
-          <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: MUTED, marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Buscar</label>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: MUTED, marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Buscar</label>
           <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: MUTED, pointerEvents: 'none' }} />
+            <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: MUTED, pointerEvents: 'none' }} />
             <input
               type="text" placeholder="Número o institución..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+              value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
               style={{ ...INPUT_S, paddingLeft: '28px' }}
+              onFocus={e => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)' }}
+              onBlur={e => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none' }}
             />
           </div>
         </div>
 
         <div style={{ flex: '1 1 140px', minWidth: '120px' }}>
-          <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: MUTED, marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Estado</label>
-          <select value={estado} onChange={(e) => { setEstado(e.target.value); setPage(1) }} style={{ ...INPUT_S }}>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: MUTED, marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Estado</label>
+          <select value={estado} onChange={(e) => { setEstado(e.target.value); setPage(1) }} style={{ ...INPUT_S, cursor: 'pointer' }}
+            onFocus={e => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)' }}
+            onBlur={e => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none' }}
+          >
             <option value="">Todos</option>
             <option value="PENDIENTE">Pendiente</option>
             <option value="APROBADO">Aprobado</option>
@@ -171,136 +166,118 @@ const fmtMonto = (v) =>
           </select>
         </div>
 
-        <button
-          onClick={() => { setSearch(""); setEstado(""); setPage(1); }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '8px 14px', background: ELEV,
-            border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd,
-            color: MUTED, cursor: 'pointer', fontSize: '13px',
-            fontFamily: theme.typography.fontFamily, transition: 'all 0.15s ease',
-            whiteSpace: 'nowrap',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = TEXT; e.currentTarget.style.background = HOVER; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = MUTED; e.currentTarget.style.background = ELEV; }}
+        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          onClick={() => { setSearch(""); setEstado(""); setPage(1) }}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: 'rgba(26,58,92,0.06)', border: '1px solid rgba(26,58,92,0.12)', borderRadius: '8px', color: MUTED, cursor: 'pointer', fontSize: '13px', fontFamily: 'var(--font-primary)', whiteSpace: 'nowrap', transition: 'all 0.15s ease' }}
         >
           <RefreshCw size={13} /> Limpiar
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
       {/* Table */}
-      <div style={{
-        background: CARD, border: `1px solid ${BORDER}`,
-        borderRadius: theme.border.radiusMd, overflow: 'hidden', marginBottom: '14px',
-      }}>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+        style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', overflow: 'hidden', marginBottom: '14px', backdropFilter: 'blur(12px)', boxShadow: '0 2px 16px rgba(26,58,92,0.06)' }}
+      >
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
+          <div style={{ padding: '48px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
+            <div style={{ width: '32px', height: '32px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: ACCENT, borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
             Cargando certificados...
           </div>
         ) : certificados.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
+          <div style={{ padding: '48px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
             No hay certificados disponibles
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
+            <table className="ueb-table" style={{ minWidth: '700px' }}>
               <thead>
-                <tr style={{ background: ELEV, borderBottom: `1px solid ${BORDER}` }}>
+                <tr>
                   {['#', 'Número', 'Entidad Requiriente', 'Usuario', 'Fecha', 'Estado', 'Monto', 'Acciones'].map((h, i) => (
-                    <th key={i} style={{
-                      padding: '10px 12px',
-                      textAlign: i >= 5 ? (i === 6 ? 'right' : 'center') : 'left',
-                      fontSize: '11px', fontWeight: 700, color: MUTED,
-                      textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                    }}>
-                      {h}
-                    </th>
+                    <th key={i} style={{ textAlign: i >= 6 ? 'right' : i === 5 ? 'center' : 'left' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {certificados.map((cert, idx) => (
-                  <tr
-                    key={cert.id_certificacion}
-                    style={{ borderBottom: `1px solid ${BORDER}`, transition: 'background 0.15s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = ELEV }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                  <motion.tr key={cert.id_certificacion}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.03, duration: 0.22 }}
                   >
-                    <td style={{ padding: '11px 12px', fontSize: '12px', color: MUTED }}>{cert.id_certificacion}</td>
-                    <td style={{ padding: '11px 12px', fontSize: '13px', fontWeight: 700, color: ACCENT }}>{cert.numero_certificado}</td>
-                    <td style={{ padding: '11px 12px', fontSize: '13px', color: TEXT, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cert.institucion}</td>
-                    <td style={{ padding: '11px 12px', fontSize: '13px', color: MUTED }}>{cert.usuario}</td>
-                    <td style={{ padding: '11px 12px', fontSize: '12px', color: MUTED, whiteSpace: 'nowrap' }}>{cert.fecha_elaboracion}</td>
-                    <td style={{ padding: '11px 12px', textAlign: 'center' }}><EstadoBadge estado={cert.estado} /></td>
-                    <td style={{ padding: '11px 12px', textAlign: 'right', fontSize: '13px', fontWeight: 700, color: theme.colors.accent.green, whiteSpace: 'nowrap' }}>
-                      {fmtMonto(cert.monto_total)}
-                    </td>
-                    <td style={{ padding: '11px 12px' }}>
-                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                    <td style={{ color: MUTED, fontSize: '12px' }}>{cert.id_certificacion}</td>
+                    <td style={{ fontWeight: 700, color: ACCENT }}>{cert.numero_certificado}</td>
+                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cert.institucion}</td>
+                    <td style={{ color: MUTED }}>{cert.usuario}</td>
+                    <td style={{ color: MUTED, fontSize: '12px', whiteSpace: 'nowrap' }}>{cert.fecha_elaboracion}</td>
+                    <td style={{ textAlign: 'center' }}><EstadoBadge estado={cert.estado} /></td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: GREEN, whiteSpace: 'nowrap' }}>{fmtMonto(cert.monto_total)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                         {[
-                          { icon: <Eye size={13} />, color: ACCENT, bg: `${ACCENT}18`, bdr: `${ACCENT}35`, title: 'Ver detalles', action: () => setSelectedCert(selectedCert?.id_certificacion === cert.id_certificacion ? null : cert) },
-                          { icon: <Printer size={13} />, color: theme.colors.accent.teal, bg: `${theme.colors.accent.teal}18`, bdr: `${theme.colors.accent.teal}35`, title: 'Imprimir', action: () => setPrintCertId(cert.id_certificacion) },
-                          { icon: <BarChart2 size={13} />, color: theme.colors.accent.gold, bg: `${theme.colors.accent.gold}18`, bdr: `${theme.colors.accent.gold}35`, title: 'Liquidaciones', action: () => navigate('/dashboard/liquidaciones') },
-                          { icon: <Clock size={13} />, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', bdr: 'rgba(167,139,250,0.3)', title: 'Historial de auditoría', action: () => handleHistorial(cert) },
-                          { icon: <Edit2 size={13} />, color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', bdr: 'rgba(251,191,36,0.3)', title: 'Editar', action: () => setEditCertId(cert.id_certificacion) },
-                          { icon: <Trash2 size={13} />, color: '#ff6b7a', bg: 'rgba(196,30,58,0.12)', bdr: 'rgba(196,30,58,0.3)', title: 'Eliminar', action: () => handleEliminar(cert.id_certificacion) },
+                          { icon: <Eye size={13} />, color: ACCENT, bg: 'rgba(46,108,164,0.10)', bdr: 'rgba(46,108,164,0.25)', title: 'Ver detalles', action: () => setSelectedCert(selectedCert?.id_certificacion === cert.id_certificacion ? null : cert), readOnlyAllowed: true },
+                          { icon: <Printer size={13} />, color: '#0891b2', bg: 'rgba(8,145,178,0.10)', bdr: 'rgba(8,145,178,0.25)', title: 'Imprimir', action: () => setPrintCertId(cert.id_certificacion), readOnlyAllowed: true },
+                          { icon: <BarChart2 size={13} />, color: GOLD, bg: 'rgba(217,119,6,0.10)', bdr: 'rgba(217,119,6,0.25)', title: 'Liquidaciones', action: () => navigate('/dashboard/liquidaciones'), readOnlyAllowed: true },
+                          { icon: <Clock size={13} />, color: '#7c3aed', bg: 'rgba(124,58,237,0.10)', bdr: 'rgba(124,58,237,0.25)', title: 'Historial', action: () => handleHistorial(cert), readOnlyAllowed: true },
+                          ...(!isReadOnly ? [
+                            { icon: <Edit2 size={13} />, color: GOLD, bg: 'rgba(217,119,6,0.10)', bdr: 'rgba(217,119,6,0.25)', title: 'Editar', action: () => setEditCertId(cert.id_certificacion) },
+                            { icon: <Trash2 size={13} />, color: RED, bg: 'rgba(185,28,28,0.10)', bdr: 'rgba(185,28,28,0.25)', title: 'Eliminar', action: () => handleEliminar(cert.id_certificacion) },
+                          ] : []),
                         ].map((btn, bi) => (
-                          <button key={bi} onClick={btn.action} title={btn.title} style={{
-                            width: '28px', height: '28px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: btn.bg, border: `1px solid ${btn.bdr}`,
-                            borderRadius: theme.border.radiusSmall,
-                            color: btn.color, cursor: 'pointer', transition: 'all 0.15s ease',
-                          }}
-                            onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.25)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
+                          <motion.button key={bi} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.92 }}
+                            onClick={btn.action} title={btn.title}
+                            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: btn.bg, border: `1px solid ${btn.bdr}`, borderRadius: '6px', color: btn.color, cursor: 'pointer', transition: 'all 0.15s ease' }}
                           >
                             {btn.icon}
-                          </button>
+                          </motion.button>
                         ))}
                       </div>
                     </td>
-                  </tr>
+                  </motion.tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* Expanded detail */}
-      {selectedCert && (
-        <div style={{
-          background: CARD, border: `1px solid ${BORDER}`,
-          borderRadius: theme.border.radiusMd, padding: '18px', marginBottom: '14px',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: TEXT }}>
-              Detalles: {selectedCert.numero_certificado}
-            </h3>
-            <button onClick={() => setSelectedCert(null)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', fontSize: '16px', padding: '2px 6px', borderRadius: '4px' }}>✕</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '13px' }}>
-            {[
-              { label: 'Estado',       value: <EstadoBadge estado={selectedCert.estado} /> },
-              { label: 'Monto Total',  value: <span style={{ color: theme.colors.accent.green, fontWeight: 700 }}>{fmtMonto(selectedCert.monto_total)}</span> },
-              { label: 'Liquidado',    value: <span style={{ color: theme.colors.accent.green, fontWeight: 700 }}>{selectedCert.liquidado}</span> },
-              { label: 'Pendiente',    value: <span style={{ color: '#fbbf24', fontWeight: 700 }}>{selectedCert.pendiente}</span> },
-            ].map((r, i) => (
-              <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <span style={{ color: MUTED, minWidth: '90px' }}>{r.label}:</span>
-                {r.value}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {selectedCert && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '18px', marginBottom: '14px', backdropFilter: 'blur(12px)', boxShadow: '0 2px 16px rgba(26,58,92,0.06)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: TEXT }}>
+                Detalles: <span style={{ color: ACCENT }}>{selectedCert.numero_certificado}</span>
+              </h3>
+              <motion.button whileHover={{ scale: 1.1 }} onClick={() => setSelectedCert(null)}
+                style={{ background: 'rgba(26,58,92,0.06)', border: '1px solid rgba(26,58,92,0.12)', borderRadius: '8px', color: MUTED, cursor: 'pointer', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={14} />
+              </motion.button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '12px', fontSize: '13px' }}>
+              {[
+                { label: 'Estado',      value: <EstadoBadge estado={selectedCert.estado} /> },
+                { label: 'Monto Total', value: <span style={{ color: GREEN, fontWeight: 700 }}>{fmtMonto(selectedCert.monto_total)}</span> },
+                { label: 'Liquidado',   value: <span style={{ color: GREEN, fontWeight: 700 }}>{selectedCert.liquidado}</span> },
+                { label: 'Pendiente',   value: <span style={{ color: GOLD, fontWeight: 700 }}>{selectedCert.pendiente}</span> },
+              ].map((r, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center', background: '#f8fafd', borderRadius: '8px', padding: '10px 12px', border: '1px solid rgba(46,108,164,0.10)' }}>
+                  <span style={{ color: MUTED, minWidth: '90px', fontSize: '12px' }}>{r.label}:</span>
+                  {r.value}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <PagBtn onClick={() => setPage(1)} disabled={page === 1} title="Primera">«</PagBtn>
-          <PagBtn onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} title="Anterior">‹</PagBtn>
+          <PagBtn onClick={() => setPage(1)} disabled={page === 1}>«</PagBtn>
+          <PagBtn onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</PagBtn>
 
           {Array.from({ length: totalPages }, (_, i) => i + 1)
             .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
@@ -314,185 +291,140 @@ const fmtMonto = (v) =>
             )
           }
 
-          <PagBtn onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} title="Siguiente">›</PagBtn>
-          <PagBtn onClick={() => setPage(totalPages)} disabled={page === totalPages} title="Última">»</PagBtn>
+          <PagBtn onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>›</PagBtn>
+          <PagBtn onClick={() => setPage(totalPages)} disabled={page === totalPages}>»</PagBtn>
         </div>
       )}
 
       {/* Modals */}
-      {printCertId && <PrintCertificacion certId={printCertId} onClose={() => setPrintCertId(null)} />}
-      {editCertId  && (
-        <EditCertificacion
-          certId={editCertId}
-          onClose={() => setEditCertId(null)}
-          onSaved={() => { cargarCertificados(); setEditCertId(null) }}
-        />
-      )}
+      <AnimatePresence>
+        {printCertId && <PrintCertificacion certId={printCertId} onClose={() => setPrintCertId(null)} />}
+        {editCertId && (
+          <EditCertificacion
+            certId={editCertId}
+            onClose={() => setEditCertId(null)}
+            onSaved={() => { cargarCertificados(); setEditCertId(null) }}
+          />
+        )}
+      </AnimatePresence>
 
-      {/* Modal de Historial de Auditoría */}
-      {historial.open && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-          zIndex: 9999, overflowY: 'auto', padding: '40px 16px',
-        }}>
-          <div style={{
-            background: CARD, border: `1px solid ${BORDER}`,
-            borderRadius: theme.border.radiusMd, width: '100%', maxWidth: '620px',
-          }}>
-            {/* Header */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '18px 20px', borderBottom: `1px solid ${BORDER}`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Clock size={16} color="#a78bfa" />
-                <div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: TEXT }}>
-                    Historial de Auditoría
-                  </div>
-                  <div style={{ fontSize: '12px', color: MUTED, marginTop: '2px' }}>
-                    {historial.cert?.numero_certificado}
+      {/* Historial modal */}
+      <AnimatePresence>
+        {historial.open && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(10,25,47,0.50)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '40px 16px' }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 20 }}
+              transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+              onClick={e => e.stopPropagation()}
+              style={{ background: 'rgba(255,255,255,0.97)', border: '1px solid rgba(255,255,255,0.95)', borderRadius: '20px', width: '100%', maxWidth: '620px', boxShadow: '0 24px 80px rgba(10,25,47,0.25)', overflow: 'hidden' }}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', background: 'linear-gradient(135deg, #0d1f35, #1a3a5c)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Clock size={16} color="#54b3e0" />
+                  <div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>Historial de Auditoría</div>
+                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.60)', marginTop: '2px' }}>{historial.cert?.numero_certificado}</div>
                   </div>
                 </div>
+                <motion.button whileHover={{ scale: 1.1 }} onClick={() => setHistorial(h => ({ ...h, open: false }))}
+                  style={{ background: 'rgba(255,255,255,0.10)', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={14} />
+                </motion.button>
               </div>
-              <button
-                onClick={() => setHistorial(h => ({ ...h, open: false }))}
-                style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: '4px', borderRadius: '4px', fontSize: '16px' }}
-              >✕</button>
-            </div>
 
-            {/* Body */}
-            <div style={{ padding: '20px' }}>
-              {historial.loading ? (
-                <div style={{ textAlign: 'center', color: MUTED, padding: '30px', fontSize: '13px' }}>
-                  Cargando historial...
-                </div>
-              ) : historial.error ? (
-                <div style={{ color: '#ff6b7a', fontSize: '13px', padding: '10px' }}>{historial.error}</div>
-              ) : historial.data.length === 0 ? (
-                <div style={{ textAlign: 'center', color: MUTED, padding: '30px', fontSize: '13px' }}>
-                  No hay registros de auditoría para este certificado.
-                </div>
-              ) : (
-                <div style={{ position: 'relative' }}>
-                  {/* Línea vertical */}
-                  <div style={{
-                    position: 'absolute', left: '14px', top: '8px',
-                    bottom: '8px', width: '2px',
-                    background: `linear-gradient(to bottom, ${BORDER}, transparent)`,
-                  }} />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                    {historial.data.map((r, i) => {
-                      const meta = {
-                        'CREACIÓN':      { color: '#34d399', label: 'Creación',       icon: '✦' },
-                        'CAMBIO_ESTADO': { color: '#60a5fa', label: 'Cambio de Estado', icon: '⇄' },
-                        'EDICIÓN':       { color: '#fbbf24', label: 'Edición',         icon: '✎' },
-                        'ELIMINACIÓN':   { color: '#ff6b7a', label: 'Eliminación',     icon: '✕' },
-                      }[r.accion] || { color: MUTED, label: r.accion, icon: '•' }
-
-                      return (
-                        <div key={r.id_auditoria} style={{ display: 'flex', gap: '14px', paddingBottom: i < historial.data.length - 1 ? '20px' : '0' }}>
-                          {/* Dot */}
-                          <div style={{
-                            width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
-                            background: `${meta.color}20`, border: `2px solid ${meta.color}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '11px', color: meta.color, fontWeight: 700, zIndex: 1,
-                          }}>
-                            {meta.icon}
-                          </div>
-
-                          {/* Content */}
-                          <div style={{ flex: 1, paddingTop: '4px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '5px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: 700, color: meta.color }}>{meta.label}</span>
-                              <span style={{ fontSize: '11px', color: MUTED, whiteSpace: 'nowrap' }}>{r.fecha_hora}</span>
-                            </div>
-
-                            <div style={{ fontSize: '12px', color: MUTED, marginBottom: '4px' }}>
-                              Usuario: <span style={{ color: TEXT }}>{r.nombre_usuario}</span>
-                            </div>
-
-                            {/* Detalles según tipo */}
-                            {r.accion === 'CAMBIO_ESTADO' && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-                                <span style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: '4px', padding: '2px 7px', color: TEXT }}>{r.estado_anterior}</span>
-                                <span style={{ color: MUTED }}>→</span>
-                                <span style={{ background: `${meta.color}18`, border: `1px solid ${meta.color}40`, borderRadius: '4px', padding: '2px 7px', color: meta.color, fontWeight: 700 }}>{r.estado_nuevo}</span>
-                              </div>
-                            )}
-
-                            {r.accion === 'CREACIÓN' && r.estado_nuevo && (
-                              <div style={{ fontSize: '12px', color: MUTED }}>
-                                Estado inicial: <span style={{ color: '#34d399', fontWeight: 700 }}>{r.estado_nuevo}</span>
-                                {r.monto_nuevo != null && (
-                                  <span> · Monto: <span style={{ color: TEXT }}>
-                                    {r.monto_nuevo.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}
-                                  </span></span>
-                                )}
-                              </div>
-                            )}
-
-                            {r.accion === 'EDICIÓN' && r.campo_modificado && (
-                              <div style={{ fontSize: '12px', color: MUTED }}>
-                                Campo modificado: <span style={{ color: TEXT }}>{r.campo_modificado}</span>
-                                {r.monto_anterior != null && (
-                                  <span> · {r.monto_anterior.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })} → {r.monto_nuevo?.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</span>
-                                )}
-                              </div>
-                            )}
-
-                            {r.accion === 'ELIMINACIÓN' && r.estado_anterior && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-                                <span style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: '4px', padding: '2px 7px', color: TEXT }}>{r.estado_anterior}</span>
-                                <span style={{ color: MUTED }}>→</span>
-                                <span style={{ background: 'rgba(180,83,9,0.15)', border: '1px solid rgba(180,83,9,0.35)', borderRadius: '4px', padding: '2px 7px', color: '#d97706', fontWeight: 700 }}>{r.estado_nuevo || 'ERRADO'}</span>
-                              </div>
-                            )}
-
-                            {r.motivo && (
-                              <div style={{ fontSize: '12px', color: MUTED, marginTop: '3px' }}>
-                                Motivo: <span style={{ color: TEXT }}>{r.motivo}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
+              {/* Body */}
+              <div style={{ padding: '22px' }}>
+                {historial.loading ? (
+                  <div style={{ textAlign: 'center', color: MUTED, padding: '30px', fontSize: '13px' }}>Cargando historial...</div>
+                ) : historial.error ? (
+                  <div style={{ color: RED, fontSize: '13px', padding: '10px' }}>{historial.error}</div>
+                ) : historial.data.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: MUTED, padding: '30px', fontSize: '13px' }}>
+                    No hay registros de auditoría para este certificado.
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+                ) : (
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: '14px', top: '8px', bottom: '8px', width: '2px', background: 'linear-gradient(to bottom, rgba(46,108,164,0.25), transparent)' }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                      {historial.data.map((r, i) => {
+                        const meta = {
+                          'CREACIÓN':      { color: GREEN,   label: 'Creación',         icon: '✦' },
+                          'CAMBIO_ESTADO': { color: ACCENT,  label: 'Cambio de Estado', icon: '⇄' },
+                          'EDICIÓN':       { color: GOLD,    label: 'Edición',          icon: '✎' },
+                          'ELIMINACIÓN':   { color: RED,     label: 'Eliminación',      icon: '✕' },
+                        }[r.accion] || { color: MUTED, label: r.accion, icon: '•' }
+
+                        return (
+                          <motion.div key={r.id_auditoria} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+                            style={{ display: 'flex', gap: '14px', paddingBottom: i < historial.data.length - 1 ? '20px' : '0' }}
+                          >
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, background: `${meta.color}15`, border: `2px solid ${meta.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: meta.color, fontWeight: 700, zIndex: 1 }}>
+                              {meta.icon}
+                            </div>
+                            <div style={{ flex: 1, paddingTop: '4px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: meta.color }}>{meta.label}</span>
+                                <span style={{ fontSize: '11px', color: MUTED, whiteSpace: 'nowrap' }}>{r.fecha_hora}</span>
+                              </div>
+                              <div style={{ fontSize: '12px', color: MUTED, marginBottom: '4px' }}>
+                                Usuario: <span style={{ color: TEXT, fontWeight: 600 }}>{r.nombre_usuario}</span>
+                              </div>
+                              {r.accion === 'CAMBIO_ESTADO' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                                  <span style={{ background: '#f8fafd', border: '1px solid rgba(46,108,164,0.14)', borderRadius: '4px', padding: '2px 7px', color: TEXT }}>{r.estado_anterior}</span>
+                                  <span style={{ color: MUTED }}>→</span>
+                                  <span style={{ background: `${meta.color}15`, border: `1px solid ${meta.color}40`, borderRadius: '4px', padding: '2px 7px', color: meta.color, fontWeight: 700 }}>{r.estado_nuevo}</span>
+                                </div>
+                              )}
+                              {r.accion === 'CREACIÓN' && r.estado_nuevo && (
+                                <div style={{ fontSize: '12px', color: MUTED }}>
+                                  Estado inicial: <span style={{ color: GREEN, fontWeight: 700 }}>{r.estado_nuevo}</span>
+                                </div>
+                              )}
+                              {r.motivo && (
+                                <div style={{ fontSize: '12px', color: MUTED, marginTop: '3px' }}>
+                                  Motivo: <span style={{ color: TEXT }}>{r.motivo}</span>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-function PagBtn({ children, onClick, disabled, active, title }) {
+function PagBtn({ children, onClick, disabled, active }) {
   return (
-    <button
-      onClick={onClick} disabled={disabled} title={title}
+    <motion.button
+      whileHover={!disabled ? { scale: 1.05 } : {}}
+      whileTap={!disabled ? { scale: 0.95 } : {}}
+      onClick={onClick} disabled={disabled}
       style={{
-        minWidth: '32px', height: '32px',
-        padding: '0 8px',
-        background: active ? ACCENT : ELEV,
-        color: active ? '#fff' : (disabled ? MUTED : TEXT),
-        border: `1px solid ${active ? ACCENT : BORDER}`,
-        borderRadius: theme.border.radiusMd,
-        cursor: disabled ? 'default' : 'pointer',
-        fontSize: '13px',
-        fontWeight: active ? 700 : 400,
-        fontFamily: theme.typography.fontFamily,
-        opacity: disabled ? 0.45 : 1,
+        minWidth: '32px', height: '32px', padding: '0 8px',
+        background: active ? ACCENT : 'rgba(255,255,255,0.90)',
+        color: active ? '#fff' : disabled ? MUTED : TEXT,
+        border: active ? `1px solid ${ACCENT}` : '1px solid rgba(46,108,164,0.14)',
+        borderRadius: '8px', cursor: disabled ? 'default' : 'pointer',
+        fontSize: '13px', fontWeight: active ? 700 : 400,
+        fontFamily: 'var(--font-primary)', opacity: disabled ? 0.45 : 1,
         transition: 'all 0.15s ease',
       }}
     >
       {children}
-    </button>
+    </motion.button>
   )
 }
-

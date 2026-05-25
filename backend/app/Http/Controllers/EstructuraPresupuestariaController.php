@@ -23,8 +23,17 @@ class EstructuraPresupuestariaController extends Controller
     public function upload(Request $request)
     {
         $request->validate([
-            'csv_file' => 'required|file|mimes:csv,txt|max:10240' // Máximo 10MB
+            'csv_file'               => 'required|file|mimes:csv,txt|max:10240',
+            'id_cedula_presupuestaria' => 'nullable|integer|exists:cedula_presupuestaria,id_cedula_presupuestaria',
         ]);
+
+        $idCedulaPresupuestaria = $request->input('id_cedula_presupuestaria');
+
+        // If no cedula provided, default to the current year's cedula
+        if (!$idCedulaPresupuestaria) {
+            $cedula = DB::table('cedula_presupuestaria')->where('anio', now()->year)->first();
+            $idCedulaPresupuestaria = $cedula?->id_cedula_presupuestaria;
+        }
 
         try {
             // Guardar el archivo temporalmente
@@ -205,7 +214,7 @@ class EstructuraPresupuestariaController extends Controller
                     // 11. Crear relación ITEM-FUENTE (sin duplicar)
                     DB::table('fuente_items')->updateOrInsert(
                         ['id_item' => $item->id_item, 'id_fuente' => $idFuente],
-                        ['created_at' => now(), 'updated_at' => now()]
+                        ['id_cedula_presupuestaria' => $idCedulaPresupuestaria, 'created_at' => now(), 'updated_at' => now()]
                     );
 
                     $processedCount++;
@@ -235,19 +244,39 @@ class EstructuraPresupuestariaController extends Controller
     /**
      * Obtener resumen de la estructura presupuestaria
      */
-    public function summary()
+    public function summary(Request $request)
     {
         try {
+            $idCedula = $request->input('id_cedula_presupuestaria');
+
+            $baseQuery = DB::table('fuente_items');
+            if ($idCedula) {
+                $baseQuery->where('id_cedula_presupuestaria', $idCedula);
+            }
+            $itemIds = (clone $baseQuery)->distinct()->pluck('id_item');
+
+            $actIds = DB::table('items')
+                ->whereIn('id_item', $itemIds)
+                ->distinct()->pluck('id_actividad');
+
+            $proyIds = DB::table('actividades')
+                ->whereIn('id_actividad', $actIds)
+                ->distinct()->pluck('id_proyecto');
+
+            $subpIds = DB::table('proyectos')
+                ->whereIn('id_proyecto', $proyIds)
+                ->distinct()->pluck('id_subprograma');
+
+            $progIds = DB::table('subprogramas')
+                ->whereIn('id_subprograma', $subpIds)
+                ->distinct()->pluck('id_programa');
+
             $summary = [
-                'programas_count'           => Programa::count(),
-                'subprogramas_count'        => Subprograma::count(),
-                'proyectos_count'           => Proyecto::count(),
-                'actividades_count'         => Actividad::count(),
-                'items_count'               => Item::count(),
-                'ubicaciones_count'         => Geografica::count(),
-                'fuentes_count'             => FuenteFinanciamiento::count(),
-                'organismos_count'          => Organismo::count(),
-                'naturalezas_count'         => NaturalezaPrestacion::count(),
+                'programas_count'    => $progIds->count(),
+                'subprogramas_count' => $subpIds->count(),
+                'proyectos_count'    => $proyIds->count(),
+                'actividades_count'  => $actIds->count(),
+                'items_count'        => $itemIds->count(),
             ];
 
             return response()->json([
@@ -269,81 +298,116 @@ class EstructuraPresupuestariaController extends Controller
     public function getData(Request $request)
     {
         try {
-            $page = $request->input('page', 1);
-            $limit = $request->input('limit', 50);
-            $search = $request->input('search', '');
-            $tipo = $request->input('tipo', 'items'); // programas, subprogramas, proyectos, actividades, items
+            $page     = $request->input('page', 1);
+            $limit    = $request->input('limit', 50);
+            $search   = $request->input('search', '');
+            $tipo     = $request->input('tipo', 'items');
+            $idCedula = $request->input('id_cedula_presupuestaria');
 
-            $query = null;
             $offset = ($page - 1) * $limit;
 
-            switch($tipo) {
+            // Precompute hierarchy IDs filtered by cedula (used by non-item views)
+            $itemIdsByCedula = null;
+            if ($idCedula) {
+                $itemIdsByCedula = DB::table('fuente_items')
+                    ->where('id_cedula_presupuestaria', $idCedula)
+                    ->distinct()->pluck('id_item');
+            }
+
+            $query = null;
+
+            switch ($tipo) {
                 case 'programas':
                     $query = Programa::query();
+                    if ($idCedula) {
+                        $actIds  = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
+                        $proyIds = DB::table('actividades')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
+                        $subpIds = DB::table('proyectos')->whereIn('id_proyecto', $proyIds)->distinct()->pluck('id_subprograma');
+                        $progIds = DB::table('subprogramas')->whereIn('id_subprograma', $subpIds)->distinct()->pluck('id_programa');
+                        $query->whereIn('id_programa', $progIds);
+                    }
                     if ($search) {
-                        $query->where('cod_programa', 'LIKE', "%$search%")
-                              ->orWhere('nombre_programa', 'LIKE', "%$search%");
+                        $query->where(fn($q) => $q->where('cod_programa', 'LIKE', "%$search%")->orWhere('nombre_programa', 'LIKE', "%$search%"));
                     }
                     break;
-                    
+
                 case 'subprogramas':
                     $query = Subprograma::with('programa');
+                    if ($idCedula) {
+                        $actIds  = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
+                        $proyIds = DB::table('actividades')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
+                        $subpIds = DB::table('proyectos')->whereIn('id_proyecto', $proyIds)->distinct()->pluck('id_subprograma');
+                        $query->whereIn('id_subprograma', $subpIds);
+                    }
                     if ($search) {
-                        $query->where('cod_subprograma', 'LIKE', "%$search%")
-                              ->orWhere('nombre_subprograma', 'LIKE', "%$search%");
+                        $query->where(fn($q) => $q->where('cod_subprograma', 'LIKE', "%$search%")->orWhere('nombre_subprograma', 'LIKE', "%$search%"));
                     }
                     break;
-                    
+
                 case 'proyectos':
                     $query = Proyecto::with('subprograma.programa');
+                    if ($idCedula) {
+                        $actIds  = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
+                        $proyIds = DB::table('actividades')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
+                        $query->whereIn('id_proyecto', $proyIds);
+                    }
                     if ($search) {
-                        $query->where('cod_proyecto', 'LIKE', "%$search%")
-                              ->orWhere('nombre_proyecto', 'LIKE', "%$search%");
+                        $query->where(fn($q) => $q->where('cod_proyecto', 'LIKE', "%$search%")->orWhere('nombre_proyecto', 'LIKE', "%$search%"));
                     }
                     break;
-                    
+
                 case 'actividades':
                     $query = Actividad::with('proyecto.subprograma.programa');
+                    if ($idCedula) {
+                        $actIds = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
+                        $query->whereIn('id_actividad', $actIds);
+                    }
                     if ($search) {
-                        $query->where('cod_actividad', 'LIKE', "%$search%")
-                              ->orWhere('nombre_actividad', 'LIKE', "%$search%");
+                        $query->where(fn($q) => $q->where('cod_actividad', 'LIKE', "%$search%")->orWhere('nombre_actividad', 'LIKE', "%$search%"));
                     }
                     break;
-                    
+
                 case 'items':
                 default:
-                    $query = Item::with([
+                    $baseRelations = [
                         'actividad.proyecto.subprograma.programa',
                         'ubicacion',
                         'organismo',
                         'naturalezaPrestacion',
-                        'fuentesFinanciamiento'
-                    ]);
+                    ];
+
+                    if ($idCedula) {
+                        $query = Item::with(array_merge($baseRelations, [
+                            'fuentesFinanciamiento' => fn($q) => $q->wherePivot('id_cedula_presupuestaria', $idCedula),
+                        ]))->whereIn('id_item', $itemIdsByCedula);
+                    } else {
+                        $query = Item::with(array_merge($baseRelations, ['fuentesFinanciamiento']));
+                    }
+
                     if ($search) {
-                        $query->where('cod_item', 'LIKE', "%$search%")
-                              ->orWhere('nombre_item', 'LIKE', "%$search%");
+                        $query->where(fn($q) => $q->where('cod_item', 'LIKE', "%$search%")->orWhere('nombre_item', 'LIKE', "%$search%"));
                     }
                     break;
             }
 
             $total = $query->count();
-            $data = $query->offset($offset)->limit($limit)->get();
+            $data  = $query->offset($offset)->limit($limit)->get();
 
             return response()->json([
-                'success' => true,
-                'data' => $data,
+                'success'    => true,
+                'data'       => $data,
                 'pagination' => [
                     'total' => $total,
-                    'page' => $page,
+                    'page'  => $page,
                     'limit' => $limit,
-                    'pages' => ceil($total / $limit)
-                ]
+                    'pages' => ceil($total / $limit),
+                ],
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
+                'message' => 'Error: ' . $e->getMessage(),
             ], 500);
         }
     }

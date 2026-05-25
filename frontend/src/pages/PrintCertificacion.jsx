@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import Cookies from 'js-cookie'
 import { X, Printer } from 'lucide-react'
-import { theme } from '../config/theme'
-
 const API_BASE = "http://localhost:8000/api"
 
 /* ══════════════════════════════════════════
@@ -125,12 +123,12 @@ export default function PrintCertificacion({ certId, onClose }) {
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',display:'flex',
                    alignItems:'flex-start',justifyContent:'center',zIndex:9999,
                    overflowY:'auto',padding:'20px 0'}}>
-        <div style={{background:theme.colors.dark['800'],border:`1px solid ${theme.colors.dark['700']}`,borderRadius:8,padding:14,width:920,maxWidth:'99vw'}}>
+        <div style={{background:'rgba(255,255,255,0.95)',border:'1px solid rgba(46,108,164,0.18)',borderRadius:8,padding:14,width:920,maxWidth:'99vw'}}>
 
           {/* toolbar */}
           <div id="pctoolbar" style={{display:'flex',justifyContent:'space-between',
                                       alignItems:'center',marginBottom:10}}>
-            <span style={{fontWeight:700,fontSize:14,color:'rgba(255,255,255,0.88)'}}>
+            <span style={{fontWeight:700,fontSize:14,color:'#1a3a5c'}}>
               Vista previa — {cert.numero_certificado}
             </span>
             <div style={{display:'flex',gap:8}}>
@@ -368,7 +366,7 @@ function Velo({ children, onClick }) {
 }
 
 /* ── Estilos de botones ── */
-const BTNP={display:'flex',alignItems:'center',gap:5,background:theme.colors.accent.blue,color:'#fff',
-            border:'none',padding:'7px 14px',borderRadius:theme.border.radiusMd,cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:theme.typography.fontFamily}
-const BTNC={display:'flex',alignItems:'center',gap:4,background:theme.colors.dark['600'],color:'rgba(255,255,255,0.6)',
-            border:`1px solid ${theme.colors.dark['700']}`,padding:'7px 12px',borderRadius:theme.border.radiusMd,cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:theme.typography.fontFamily}
+const BTNP={display:'flex',alignItems:'center',gap:5,background:'linear-gradient(135deg,#1a3a5c,#2e6ca4)',color:'#fff',
+            border:'none',padding:'7px 14px',borderRadius:'10px',cursor:'pointer',fontWeight:700,fontSize:13,fontFamily:"'Montserrat',system-ui,sans-serif",boxShadow:'0 3px 10px rgba(26,58,92,0.20)'}
+const BTNC={display:'flex',alignItems:'center',gap:4,background:'rgba(26,58,92,0.07)',color:'#5a7a9f',
+            border:'1px solid rgba(46,108,164,0.18)',padding:'7px 12px',borderRadius:'10px',cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:"'Montserrat',system-ui,sans-serif"}

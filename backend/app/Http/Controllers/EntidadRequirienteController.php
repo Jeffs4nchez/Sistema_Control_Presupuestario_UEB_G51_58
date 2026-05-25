@@ -43,7 +43,6 @@ class EntidadRequirienteController extends Controller
             'nombre_entidad'        => 'required|string|max:100',
             'responsable_entidad'   => 'required|string|max:100',
             'correo_institucional'  => 'required|email|max:100',
-            'memorando'             => 'nullable|string|max:100',
         ]);
 
         try {
@@ -51,7 +50,6 @@ class EntidadRequirienteController extends Controller
                 'nombre_entidad'        => $request->nombre_entidad,
                 'responsable_entidad'   => $request->responsable_entidad,
                 'correo_institucional'  => $request->correo_institucional,
-                'memorando'             => $request->memorando ?? '',
             ]);
 
             return response()->json([
@@ -86,7 +84,6 @@ class EntidadRequirienteController extends Controller
             'nombre_entidad'        => 'required|string|max:100',
             'responsable_entidad'   => 'required|string|max:100',
             'correo_institucional'  => 'required|email|max:100',
-            'memorando'             => 'nullable|string|max:100',
         ]);
 
         try {
@@ -95,7 +92,6 @@ class EntidadRequirienteController extends Controller
                 'nombre_entidad'        => $request->nombre_entidad,
                 'responsable_entidad'   => $request->responsable_entidad,
                 'correo_institucional'  => $request->correo_institucional,
-                'memorando'             => $request->memorando ?? '',
             ]);
 
             return response()->json([

@@ -262,6 +262,66 @@ class ReporteController extends Controller
         }
     }
 
+    /**
+     * GET /api/reportes/auditoria/csv
+     */
+    public function auditoriaCsv(Request $request)
+    {
+        $rows = \App\Models\Auditoria::orderBy('fecha_hora', 'desc')->get();
+
+        $headers = [
+            'ID', 'N° Certificado', 'Acción', 'Campo Modificado',
+            'Estado Anterior', 'Estado Nuevo', 'Monto Anterior', 'Monto Nuevo',
+            'Motivo', 'Usuario', 'Fecha y Hora',
+        ];
+
+        $csv = $this->buildCsv($headers, $rows->map(fn($r) => [
+            $r->id_auditoria,
+            $r->numero_certificado ?? '',
+            $r->accion             ?? '',
+            $r->campo_modificado   ?? '',
+            $r->estado_anterior    ?? '',
+            $r->estado_nuevo       ?? '',
+            $r->monto_anterior !== null ? number_format((float) $r->monto_anterior, 2, '.', '') : '',
+            $r->monto_nuevo     !== null ? number_format((float) $r->monto_nuevo,    2, '.', '') : '',
+            $r->motivo             ?? '',
+            $r->nombre_usuario     ?? 'Sistema',
+            $r->fecha_hora?->format('d/m/Y H:i:s') ?? '',
+        ])->toArray());
+
+        return response($csv, 200, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="auditoria_' . now()->format('Ymd_His') . '.csv"',
+        ]);
+    }
+
+    /**
+     * GET /api/reportes/auditoria/json — para impresión PDF
+     */
+    public function auditoriaJson(Request $request)
+    {
+        try {
+            $rows = \App\Models\Auditoria::orderBy('fecha_hora', 'desc')->get()
+                ->map(fn($r) => [
+                    'id_auditoria'       => $r->id_auditoria,
+                    'numero_certificado' => $r->numero_certificado,
+                    'accion'             => $r->accion,
+                    'campo_modificado'   => $r->campo_modificado,
+                    'estado_anterior'    => $r->estado_anterior,
+                    'estado_nuevo'       => $r->estado_nuevo,
+                    'monto_anterior'     => $r->monto_anterior,
+                    'monto_nuevo'        => $r->monto_nuevo,
+                    'motivo'             => $r->motivo,
+                    'nombre_usuario'     => $r->nombre_usuario ?? 'Sistema',
+                    'fecha_hora'         => $r->fecha_hora?->format('d/m/Y H:i:s'),
+                ]);
+
+            return response()->json(['success' => true, 'data' => $rows->values()]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     private function buildCsv(array $headers, array $rows): string
     {
         $output = fopen('php://temp', 'r+');

@@ -1,255 +1,205 @@
 /**
- * GUÍA DE ESTILOS VISUAL - UEB Sistema de Control Presupuestario
+ * UEB Design System — Sistema de Control Presupuestario
+ * Universidad Estatal de Bolívar
  *
- * Paleta institucional basada en el azul navy #003358 de la
- * Universidad Estatal de Bolívar.
+ * Brand colors sourced from UEB Corporate Identity Manual.
  */
 
 export const theme = {
 
-  // ── COLORES ──────────────────────────────────────────────────────────────
-
+  // ── BRAND COLORS (UEB Corporate Identity) ────────────────────────
   colors: {
+    // Primary palette
+    primary:      '#1a3a5c',   // Primary Blue dark
+    primaryMid:   '#2e6ca4',   // Primary Blue medium
+    primaryLight: '#54b3e0',   // Primary Blue light
+    red:          '#ff0000',   // Primary Red
+    redDark:      '#8b0f0f',   // Accent red dark
+    white:        '#FFFFFF',
+    bg:           '#f0f4f8',   // Background
 
-    // Institucional UEB
-    primary:      '#003358',   // Azul navy institucional
-    primaryLight: '#0055a0',   // Azul medio (variante clara)
-    primaryDark:  '#001f3f',   // Azul muy oscuro (casi negro-azul)
-    secondary:    '#ffffff',   // Blanco
-
-    // Acentos — todos compatibles con el azul navy
-    accent: {
-      red:   '#C41E3A',        // Rojo institucional UEB
-      blue:  '#1a7bbf',        // Azul claro (variante luminosa del primario)
-      gold:  '#C9922A',        // Dorado — complemento clásico del navy
-      teal:  '#0891b2',        // Teal — contraste frío
-      green: '#10b981',        // Verde éxito
-      amber: '#D97706',        // Ámbar — advertencias / hover de warning
+    // Sidebar (dark theme)
+    sidebar: {
+      from:   '#0a1929',
+      to:     '#1a3a5c',
+      text:   'rgba(255,255,255,0.60)',
+      active: 'rgba(84,179,224,0.14)',
+      border: 'rgba(84,179,224,0.12)',
     },
 
-    // Modo oscuro — tonos navy oscuros usados en el interior del sistema
-    dark: {
-      950: '#060d1a',          // Fondo más profundo
-      900: '#0a1628',          // Fondos principales
-      800: '#0f1f38',          // Cards / sidebars
-      700: '#162844',          // Bordes
-      600: '#1e3354',          // Elementos elevados
-      500: '#264060',          // Hover / activo
+    // Glass cards (light bg)
+    glass: {
+      bg:     'rgba(255,255,255,0.85)',
+      border: 'rgba(255,255,255,0.95)',
+      shadow: '0 4px 24px rgba(26,58,92,0.10)',
     },
 
-    // Estados semánticos
-    state: {
-      success: '#10b981',      // Verde esmeralda
-      error:   '#C41E3A',      // Rojo UEB
-      warning: '#D97706',      // Ámbar
-      info:    '#1a7bbf',      // Azul claro
-    },
-
-    // Texto
+    // Text (light backgrounds)
     text: {
-      primary:   '#001F3F',    // Azul muy oscuro — texto principal
-      secondary: '#3D5A80',    // Azul grisáceo — texto secundario
-      tertiary:  '#6B7280',    // Gris medio
-      light:     '#9CA3AF',    // Gris claro
-      muted:     '#D1D5DB',    // Gris muy claro / deshabilitado
-      inverse:   '#ffffff',    // Blanco — sobre fondos oscuros
-      error:     '#C41E3A',    // Rojo — mensajes de error
+      heading:   '#1a3a5c',
+      body:      '#2e4a6c',
+      secondary: '#5a7a9f',
+      muted:     '#8fa3c0',
+      light:     '#b0c4d8',
+      inverse:   '#ffffff',
+      error:     '#b91c1c',
     },
 
-    // Escala de grises con tinte navy sutil
-    gray: {
-      '100': '#F4F6FA',
-      '200': '#E6EAF2',
-      '300': '#CDD4E3',
-      '400': '#9AAFC8',
-      '500': '#6B85A0',
-      '600': '#4A6080',
-      '700': '#2E4060',
-      '800': '#1a2d45',
-      '900': '#0d1b2e',
+    // Semantic states
+    state: {
+      success: '#059669',
+      warning: '#d97706',
+      error:   '#b91c1c',
+      info:    '#2e6ca4',
     },
 
-    // Inputs (formularios en modo claro — login)
+    // Input fields
     input: {
-      background: '#E8F0FE',   // Azul muy claro
-      border:     '#C5D5EA',   // Borde azul suave
-      focus:      '#003358',   // Foco navy
-      disabled:   '#F3F6FB',   // Deshabilitado
+      bg:         '#f8fafd',
+      background: '#f8fafd',
+      border:     'rgba(46,108,164,0.22)',
+      focus:      '#54b3e0',
+      glow:       'rgba(84,179,224,0.18)',
     },
 
-    // Paletas de estado completas (fondo + borde + texto)
+    secondary: '#ffffff',
+
     error: {
-      background: '#FEE2E2',
-      border:     '#FCA5A5',
-      text:       '#C41E3A',
-      light:      '#FECACA',
+      border: '#fca5a5',
+      text:   '#991b1b',
     },
-    success: {
-      background: '#D1FAE5',
-      border:     '#10b981',
-      text:       '#065f46',
-      light:      '#ECFDF5',
-    },
-    warning: {
-      background: '#FEF3C7',
-      border:     '#D97706',
-      text:       '#92400e',
-      light:      '#FFFBEB',
-    },
-    info: {
-      background: '#DBEAFE',
-      border:     '#1a7bbf',
-      text:       '#1e3a8a',
-      light:      '#EFF6FF',
+
+    // Accent palette (charts, badges)
+    accent: {
+      blue:   '#2e6ca4',
+      light:  '#54b3e0',
+      teal:   '#0891b2',
+      green:  '#059669',
+      amber:  '#d97706',
+      red:    '#8b0f0f',
+      purple: '#7c3aed',
+      orange: '#ea580c',
     },
   },
 
-  // ── TIPOGRAFÍA ───────────────────────────────────────────────────────────
-
+  // ── TYPOGRAPHY ───────────────────────────────────────────────────
   typography: {
-    fontFamily:    '"Argentum Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    fontFamilyAlt: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-
+    fontFamily: "'Montserrat', system-ui, sans-serif",
     fontSize: {
-      xs:   '12px',
-      sm:   '13px',
-      md:   '14px',
-      base: '15px',
-      lg:   '16px',
-      xl:   '18px',
-      '2xl':'20px',
-      '3xl':'22px',
+      xs:   '11px',
+      sm:   '12px',
+      md:   '13px',
+      base: '14px',
+      lg:   '15px',
+      xl:   '16px',
+      '2xl':'18px',
+      '3xl':'20px',
       '4xl':'24px',
       '5xl':'28px',
       '6xl':'32px',
-      '7xl':'36px',
     },
-
     fontWeight: {
-      light:     300,
-      normal:    400,
-      medium:    500,
-      semibold:  600,
-      bold:      700,
-      extrabold: 800,
+      light:    300,
+      normal:   400,
+      medium:   500,
+      semibold: 600,
+      bold:     700,
+      black:    800,
     },
-
     lineHeight: {
       tight:   1.2,
       normal:  1.5,
-      relaxed: 1.75,
-      loose:   2,
+      relaxed: 1.65,
     },
   },
 
-  // ── ESPACIADOS ───────────────────────────────────────────────────────────
-
-  spacing: {
-    xs:   '0.25rem',   //  4px
-    sm:   '0.5rem',    //  8px
-    md:   '1rem',      // 16px
-    lg:   '1.5rem',    // 24px
-    xl:   '2rem',      // 32px
-    '2xl':'2.5rem',    // 40px
-    '3xl':'3rem',      // 48px
-    '4xl':'4rem',      // 64px
-    '5xl':'5rem',      // 80px
-    '6xl':'6rem',      // 96px
-  },
-
-  // ── BORDES ───────────────────────────────────────────────────────────────
-
+  // ── BORDER ───────────────────────────────────────────────────────
   border: {
-    radius:     '13px',
-    radiusSmall: '4px',
-    radiusMd:    '8px',
-    radiusLg:   '16px',
-    radiusFull: '9999px',
+    radius:      '10px',
+    radiusSmall: '6px',
+    radiusMd:    '10px',
+    radiusLg:    '14px',
+    radiusXl:    '20px',
+    radiusFull:  '9999px',
   },
 
-  // ── SOMBRAS ──────────────────────────────────────────────────────────────
-
+  // ── SHADOW ───────────────────────────────────────────────────────
   shadow: {
-    sm:    '0 2px 4px rgba(0, 51, 88, 0.12)',
-    md:    '0 4px 8px rgba(0, 51, 88, 0.2)',
-    lg:    '0px 0px 25px 0px rgba(0, 31, 63, 0.45)',
-    xl:    '0 20px 25px -5px rgba(0, 51, 88, 0.15)',
-    drop:  '0 4px 12px rgba(0, 51, 88, 0.2)',
-    inner: 'inset 0 2px 4px rgba(0, 51, 88, 0.08)',
-    none:  'none',
+    sm:    '0 2px 8px rgba(26,58,92,0.08)',
+    md:    '0 4px 20px rgba(26,58,92,0.10)',
+    lg:    '0 20px 60px rgba(0,0,0,0.40), 0 6px 18px rgba(0,0,0,0.28)',
+    xl:    '0 20px 60px rgba(26,58,92,0.18)',
+    glow:  '0 0 20px rgba(84,179,224,0.35)',
   },
 
-  // ── TRANSICIONES ─────────────────────────────────────────────────────────
+  // ── SPACING ──────────────────────────────────────────────────────
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+    '2xl': '2.5rem',
+    '3xl': '3rem',
+    '4xl': '3.5rem',
+  },
 
+  // ── TRANSITIONS ──────────────────────────────────────────────────
   transition: {
-    fast:   'all 0.2s ease',
-    normal: 'all 0.3s ease',
-    slow:   'all 0.5s ease',
-    bounce: 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+    fast:   'all 0.18s ease',
+    normal: 'all 0.28s ease',
+    slow:   'all 0.45s ease',
+    spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
   },
 
-  // ── BREAKPOINTS ──────────────────────────────────────────────────────────
-
-  breakpoints: {
-    mobile:    640,
-    tablet:    768,
-    desktop:  1024,
-    wide:     1200,
-    ultrawide:1400,
-  },
-
-  // ── COMPONENTES ──────────────────────────────────────────────────────────
-
+  // ── COMPONENT DIMENSIONS ─────────────────────────────────────────
   components: {
-    login: {
-      containerDesktop: { maxWidth: '1150px', minHeight: '400px' },
-      containerMobile:  { maxWidth: '100%', minHeight: '550px', margin: '0 0.25rem' },
-      logoMaxWidth:     { desktop: '767px', mobile: '280px' },
+    sidebar: {
+      widthOpen:      '264px',
+      widthCollapsed: '64px',
     },
-    button: {
-      height:  { sm: '32px', md: '40px', lg: '48px' },
-      padding: { sm: '0.5rem 1rem', md: '0.75rem 1.5rem', lg: '1rem 2rem' },
+    header: {
+      height: '60px',
     },
     card: {
-      padding: { sm: '1rem', md: '1.5rem', lg: '2rem' },
+      padding: { sm: '14px', md: '20px', lg: '28px' },
+      radius: '16px',
     },
-    sidebar: {
-      width: { collapsed: '80px', expanded: '280px' },
+    login: {
+      containerDesktop: {
+        maxWidth:  '1100px',
+        minHeight: '390px',
+      },
+      containerMobile: {
+        maxWidth:  '420px',
+        minHeight: 'auto',
+        margin:    '0 auto',
+      },
+      logoMaxWidth: {
+        desktop: '480px',
+        mobile:  '180px',
+      },
     },
   },
 
-  // ── Z-INDEX ──────────────────────────────────────────────────────────────
-
+  // ── Z-INDEX ──────────────────────────────────────────────────────
   zIndex: {
-    hide:    -1,
-    base:     0,
-    dropdown:100,
-    sticky:  500,
-    fixed:   800,
-    modal:   900,
-    popover: 950,
-    tooltip: 1000,
+    base:    0,
+    card:    10,
+    header:  50,
+    sidebar: 100,
+    modal:   1000,
+    toast:   1100,
     loading: 9999,
   },
 };
 
-// ── HELPERS ────────────────────────────────────────────────────────────────
-
-export const getResponsive = (desktopValue, mobileValue, isMobile) =>
-  isMobile ? mobileValue : desktopValue;
-
-export const createGradient = (colors, angle = 110, isMobile = false) => {
-  const gradientAngle = isMobile ? 180 : angle;
-  return `linear-gradient(${gradientAngle}deg, ${colors.start} ${colors.startPercent}%, ${colors.end} ${colors.endPercent}%)`;
+export const createGradient = (opts, deg = 135, isMobile = false) => {
+  if (opts && typeof opts === 'object' && 'start' in opts) {
+    const pct = opts.startPercent ?? 50;
+    return `linear-gradient(${deg}deg, ${opts.start} ${pct}%, ${opts.end ?? opts.start} ${pct}%)`;
+  }
+  return `linear-gradient(${deg}deg, ${opts}, ${isMobile})`;
 };
 
-export const getStateStyle = (state = 'default') => {
-  const map = {
-    success: theme.colors.state.success,
-    error:   theme.colors.state.error,
-    warning: theme.colors.state.warning,
-    info:    theme.colors.state.info,
-    default: theme.colors.primary,
-  };
-  return map[state] || map.default;
-};
+export default theme;
