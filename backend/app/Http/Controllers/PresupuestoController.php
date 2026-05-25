@@ -18,6 +18,7 @@ class PresupuestoController extends Controller
             $programa  = $request->input('programa', '');
             $actividad = $request->input('actividad', '');
             $fuente    = $request->input('fuente', '');
+            $idCedula  = $request->input('id_cedula_presupuestaria', '');
 
             $query = DB::table('fuente_items as fi')
                 ->join('items as i',                    'fi.id_item',        '=', 'i.id_item')
@@ -41,23 +42,25 @@ class PresupuestoController extends Controller
                     'p.nombre_programa'
                 );
 
+
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('i.cod_item',     'LIKE', "%$search%")
                       ->orWhere('i.nombre_item', 'LIKE', "%$search%");
                 });
             }
+            if ($idCedula)  $query->where('fi.id_cedula_presupuestaria', $idCedula);
             if ($programa)  $query->where('p.cod_programa',  'LIKE', "%$programa%");
             if ($actividad) $query->where('a.cod_actividad', 'LIKE', "%$actividad%");
             if ($fuente)    $query->where('f.cod_fuente',    'LIKE', "%$fuente%");
 
             $rows = $query->orderBy('i.cod_item')->get();
 
-            // Certificado por (id_item, id_fuente) excluyendo anuladas
+            // Certificado por (id_item, id_fuente) excluyendo anuladas y erradas
             $certMap = DB::table('certificacion_items as ci')
                 ->join('certificacion as c', 'ci.id_certificacion', '=', 'c.id_certificacion')
                 ->select('ci.id_item', 'ci.id_fuente', DB::raw('SUM(ci.monto) as total'))
-                ->whereNotIn('c.estado', ['ANULADA'])
+                ->whereNotIn('c.estado', ['ANULADA', 'ERRADO'])
                 ->groupBy('ci.id_item', 'ci.id_fuente')
                 ->get()
                 ->mapWithKeys(fn($r) => ["{$r->id_item}_{$r->id_fuente}" => (float) $r->total]);

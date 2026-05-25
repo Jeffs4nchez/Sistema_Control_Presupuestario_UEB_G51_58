@@ -1,39 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { theme } from '../config/theme';
 import axios from 'axios';
-import { Edit2, Trash2, UserPlus, Users, UserCheck, UserX } from 'lucide-react';
-
-const BG     = theme.colors.dark['900'];
-const CARD   = theme.colors.dark['800'];
-const BORDER = theme.colors.dark['700'];
-const ELEV   = theme.colors.dark['600'];
-const HOVER  = theme.colors.dark['500'];
-const ACCENT = theme.colors.accent.blue;
-const TEXT   = 'rgba(255,255,255,0.88)';
-const MUTED  = 'rgba(255,255,255,0.45)';
-
-const INPUT_STYLE = {
-  width: '100%',
-  padding: '9px 12px',
-  background: ELEV,
-  border: `1px solid ${BORDER}`,
-  borderRadius: theme.border.radiusMd,
-  color: TEXT,
-  fontSize: '13px',
-  fontFamily: theme.typography.fontFamily,
-  outline: 'none',
-  boxSizing: 'border-box',
-};
-
-const LABEL_STYLE = {
-  display: 'block',
-  fontSize: '12px',
-  fontWeight: 600,
-  color: MUTED,
-  marginBottom: '6px',
-  fontFamily: theme.typography.fontFamily,
-};
+import { motion, AnimatePresence } from 'framer-motion';
+import { Edit2, Trash2, UserPlus, Users, UserCheck, UserX, X, Lock, Eye, EyeOff, Search } from 'lucide-react';
 
 const CARGOS = [
   'Director(a) financiera',
@@ -42,12 +11,66 @@ const CARGOS = [
   'Rector',
 ];
 
-const FormField = ({ label, children }) => (
-  <div style={{ marginBottom: '14px' }}>
-    <label style={LABEL_STYLE}>{label}</label>
-    {children}
-  </div>
-);
+const inputStyle = {
+  width: '100%',
+  padding: '9px 12px',
+  background: '#f8fafd',
+  border: '1px solid rgba(46,108,164,0.22)',
+  borderRadius: '8px',
+  color: '#1a3a5c',
+  fontSize: '13px',
+  fontFamily: 'var(--font-primary)',
+  outline: 'none',
+  boxSizing: 'border-box',
+  transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
+};
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '11px',
+  fontWeight: 700,
+  color: '#5a7a9f',
+  marginBottom: '5px',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  fontFamily: 'var(--font-primary)',
+};
+
+function FormField({ label, children }) {
+  return (
+    <div style={{ marginBottom: '14px' }}>
+      <label style={labelStyle}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, placeholder }) {
+  const [show, setShow] = useState(false);
+  return (
+    <FormField label={label}>
+      <div style={{ position: 'relative' }}>
+        <Lock size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8fa3c0', pointerEvents: 'none' }} />
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          style={{ ...inputStyle, paddingLeft: '30px', paddingRight: '34px' }}
+          onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+          onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+        />
+        <button
+          type="button"
+          onClick={() => setShow(s => !s)}
+          style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#8fa3c0', cursor: 'pointer', padding: 0, display: 'flex' }}
+        >
+          {show ? <EyeOff size={13} /> : <Eye size={13} />}
+        </button>
+      </div>
+    </FormField>
+  );
+}
 
 export const Usuarios = () => {
   const { token } = useAuth();
@@ -70,7 +93,6 @@ export const Usuarios = () => {
   });
 
   useEffect(() => { cargarUsuarios(); }, []);
-
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', h);
@@ -108,15 +130,16 @@ export const Usuarios = () => {
   const handleAbrirEliminar = (u) => { setUsuarioAEliminar(u); setShowDeleteDialog(true); };
 
   const handleCrearUsuario = async () => {
-    if (!formData.nombres || !formData.apellidos || !formData.correo_institucional || !formData.contrasena || !formData.cargo) {
+    if (!formData.nombres || !formData.apellidos || !formData.correo_institucional || !formData.cargo) {
       setDialogMsg({ text: 'Todos los campos son requeridos', type: 'error' }); return;
     }
     try {
       setIsLoading(true);
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/usuarios`, formData, { headers: { Authorization: `Bearer ${token}` } });
+      const { contrasena, ...createData } = formData;
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/usuarios`, createData, { headers: { Authorization: `Bearer ${token}` } });
       if (res.data.status === 'success') {
-        setDialogMsg({ text: 'Usuario creado exitosamente', type: 'success' });
-        setTimeout(() => { setShowCreateDialog(false); setDialogMsg({ text: '', type: '' }); cargarUsuarios(); }, 1400);
+        setDialogMsg({ text: 'Usuario creado. Se envió un correo con las credenciales de acceso.', type: 'success' });
+        setTimeout(() => { setShowCreateDialog(false); setDialogMsg({ text: '', type: '' }); cargarUsuarios(); }, 2000);
       }
     } catch (err) {
       const msg = err.response?.data?.errors ? Object.values(err.response.data.errors).flat().join(', ') : err.response?.data?.message || err.message;
@@ -151,7 +174,7 @@ export const Usuarios = () => {
         setGlobalMsg({ text: 'Usuario eliminado exitosamente', type: 'success' });
         setShowDeleteDialog(false);
         cargarUsuarios();
-        setTimeout(() => setGlobalMsg({ text: '', type: '' }), 3000);
+        setTimeout(() => setGlobalMsg({ text: '', type: '' }), 3500);
       }
     } catch (err) {
       setGlobalMsg({ text: err.response?.data?.message || err.message, type: 'error' });
@@ -168,125 +191,164 @@ export const Usuarios = () => {
   const activos       = usuarios.filter(u => u.estado === 'activo').length;
   const inactivos     = usuarios.filter(u => u.estado === 'inactivo').length;
 
-  const msgBg   = (t) => t === 'error' ? 'rgba(196,30,58,0.12)' : 'rgba(16,185,129,0.12)';
-  const msgClr  = (t) => t === 'error' ? '#ff6b7a' : '#34d399';
-  const msgBdr  = (t) => t === 'error' ? 'rgba(196,30,58,0.35)' : 'rgba(16,185,129,0.35)';
-
   const P = isMobile ? '20px' : '28px';
 
   return (
-    <div style={{ background: BG, minHeight: '100%', padding: P, fontFamily: theme.typography.fontFamily }}>
+    <div style={{ background: 'var(--page-bg)', minHeight: '100%', padding: P, fontFamily: 'var(--font-primary)' }}>
 
-      {/* Page header */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: isMobile ? '20px' : '22px', fontWeight: 700, color: TEXT, letterSpacing: '-0.02em' }}>
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: '24px' }}
+      >
+        <h1 style={{ margin: '0 0 4px', fontSize: isMobile ? '20px' : '22px', fontWeight: 800, color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
           Gestión de Usuarios
         </h1>
-        <p style={{ margin: 0, fontSize: '13px', color: MUTED }}>Administra los usuarios del sistema</p>
-      </div>
+        <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+          Administra los usuarios del sistema de control presupuestario
+        </p>
+      </motion.div>
 
       {/* Global message */}
-      {globalMsg.text && (
-        <div style={{
-          padding: '10px 14px', marginBottom: '16px',
-          background: msgBg(globalMsg.type), border: `1px solid ${msgBdr(globalMsg.type)}`,
-          borderRadius: theme.border.radiusMd, color: msgClr(globalMsg.type),
-          fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <span>{globalMsg.text}</span>
-          <button onClick={() => setGlobalMsg({ text: '', type: '' })} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 0 0 12px' }}>✕</button>
-        </div>
-      )}
+      <AnimatePresence>
+        {globalMsg.text && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{
+              padding: '10px 14px', marginBottom: '16px',
+              background: globalMsg.type === 'error' ? 'rgba(139,15,15,0.08)' : 'rgba(5,150,105,0.08)',
+              border: `1px solid ${globalMsg.type === 'error' ? 'rgba(139,15,15,0.25)' : 'rgba(5,150,105,0.25)'}`,
+              borderRadius: '10px',
+              color: globalMsg.type === 'error' ? '#b91c1c' : '#047857',
+              fontSize: '13px', fontWeight: 500,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}
+          >
+            <span>{globalMsg.text}</span>
+            <button onClick={() => setGlobalMsg({ text: '', type: '' })} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 0 0 12px', fontSize: '16px' }}>✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Stats */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
-        gap: '10px',
-        marginBottom: '20px',
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Total Usuarios', value: totalUsuarios, icon: <Users size={18} />, color: ACCENT },
-          { label: 'Activos', value: activos, icon: <UserCheck size={18} />, color: theme.colors.accent.green },
-          { label: 'Inactivos', value: inactivos, icon: <UserX size={18} />, color: theme.colors.accent.red },
-        ].map((s, i) => (
-          <div key={i} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '16px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ color: s.color, display: 'flex' }}>{s.icon}</span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</span>
-            </div>
-            <p style={{ margin: 0, fontSize: '26px', fontWeight: 700, color: TEXT, letterSpacing: '-0.02em' }}>{s.value}</p>
-          </div>
-        ))}
+          { label: 'Total Usuarios', value: totalUsuarios, icon: Users,     color: '#2e6ca4' },
+          { label: 'Activos',        value: activos,       icon: UserCheck, color: '#059669' },
+          { label: 'Inactivos',      value: inactivos,     icon: UserX,     color: '#8b0f0f' },
+        ].map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08, type: 'spring', stiffness: 120, damping: 18 }}
+              style={{
+                background: 'rgba(255,255,255,0.85)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255,255,255,0.95)',
+                borderRadius: '14px',
+                boxShadow: '0 4px 20px rgba(26,58,92,0.08)',
+                padding: '18px 20px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${s.color}12`, border: `1px solid ${s.color}25`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon size={18} color={s.color} />
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {s.label}
+                </span>
+              </div>
+              <p style={{ margin: 0, fontSize: '28px', fontWeight: 800, color: 'var(--text-heading)', letterSpacing: '-0.03em' }}>
+                {s.value}
+              </p>
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Toolbar */}
-      <div style={{
-        display: 'flex',
-        gap: '10px',
-        flexDirection: isMobile ? 'column' : 'row',
-        marginBottom: '16px',
-      }}>
-        <input
-          type="text"
-          placeholder="Buscar por nombre, apellido o correo..."
-          value={filtroNombre}
-          onChange={(e) => setFiltroNombre(e.target.value)}
-          style={{ ...INPUT_STYLE, flex: 1 }}
-        />
-        <button
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+        style={{ display: 'flex', gap: '10px', flexDirection: isMobile ? 'column' : 'row', marginBottom: '14px' }}
+      >
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: '#8fa3c0', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            placeholder="Buscar por nombre, apellido o correo..."
+            value={filtroNombre}
+            onChange={(e) => setFiltroNombre(e.target.value)}
+            style={{ ...inputStyle, paddingLeft: '32px' }}
+            onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+            onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+          />
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(46,108,164,0.35)' }}
+          whileTap={{ scale: 0.98 }}
           onClick={handleAbrirCrear}
           style={{
             display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '9px 18px',
-            background: ACCENT,
-            color: '#fff',
-            border: 'none',
-            borderRadius: theme.border.radiusMd,
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            fontFamily: theme.typography.fontFamily,
-            transition: 'all 0.18s ease',
+            padding: '9px 20px',
+            background: 'linear-gradient(135deg, #1a3a5c, #2e6ca4)',
+            color: '#fff', border: 'none', borderRadius: '8px',
+            cursor: 'pointer', fontSize: '13px', fontWeight: 700,
+            whiteSpace: 'nowrap', fontFamily: 'var(--font-primary)',
+            boxShadow: '0 4px 16px rgba(26,58,92,0.25)',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = '#1e90d4'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = ACCENT; }}
         >
           <UserPlus size={16} />
           Crear Usuario
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
       {/* Table */}
-      <div style={{
-        background: CARD,
-        border: `1px solid ${BORDER}`,
-        borderRadius: theme.border.radiusMd,
-        overflow: 'hidden',
-      }}>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        style={{
+          background: 'rgba(255,255,255,0.9)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(26,58,92,0.10)',
+          overflow: 'hidden',
+        }}
+      >
         {isLoading && usuariosFiltrados.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
-            Cargando usuarios...
+          <div style={{ padding: '48px', textAlign: 'center' }}>
+            <div style={{ width: '36px', height: '36px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: '#2e6ca4', borderRadius: '50%', animation: 'spin 0.9s linear infinite', margin: '0 auto 12px' }} />
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Cargando usuarios...</p>
           </div>
         ) : usuariosFiltrados.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
-            No hay usuarios que coincidan con la búsqueda
+          <div style={{ padding: '48px', textAlign: 'center' }}>
+            <Users size={36} color="rgba(26,58,92,0.15)" style={{ marginBottom: '12px' }} />
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No hay usuarios que coincidan con la búsqueda</p>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '540px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
               <thead>
-                <tr style={{ background: ELEV, borderBottom: `1px solid ${BORDER}` }}>
+                <tr style={{ background: '#f0f4f8', borderBottom: '2px solid rgba(26,58,92,0.08)' }}>
                   {['Nombre', 'Correo', 'Cargo', 'Estado', 'Acciones'].map((h, i) => (
                     <th key={i} style={{
-                      padding: '11px 14px',
+                      padding: '11px 16px',
                       textAlign: i === 4 ? 'center' : 'left',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: MUTED,
+                      fontSize: '11px', fontWeight: 700,
+                      color: 'var(--text-muted)',
                       textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
+                      letterSpacing: '0.07em',
                       whiteSpace: 'nowrap',
                     }}>
                       {h}
@@ -295,215 +357,271 @@ export const Usuarios = () => {
                 </tr>
               </thead>
               <tbody>
-                {usuariosFiltrados.map((u) => (
-                  <tr
+                {usuariosFiltrados.map((u, idx) => (
+                  <motion.tr
                     key={u.id_usuario}
-                    style={{ borderBottom: `1px solid ${BORDER}`, transition: 'background 0.15s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = ELEV; }}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.04, type: 'spring', stiffness: 180, damping: 22 }}
+                    style={{ borderBottom: '1px solid rgba(26,58,92,0.07)', transition: 'background 0.15s ease' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(240,244,248,0.85)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: 600, color: TEXT }}>
-                      {u.nombres} {u.apellidos}
+                    <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 700, color: 'var(--text-heading)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '32px', height: '32px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #1a3a5c, #2e6ca4)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0,
+                        }}>
+                          {(u.nombres || '?')[0].toUpperCase()}
+                        </div>
+                        {u.nombres} {u.apellidos}
+                      </div>
                     </td>
-                    <td style={{ padding: '12px 14px', fontSize: '13px', color: MUTED }}>
+                    <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-muted)' }}>
                       {u.correo_institucional}
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '3px 9px',
-                        background: `${ACCENT}18`,
-                        border: `1px solid ${ACCENT}35`,
-                        borderRadius: theme.border.radiusFull,
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: ACCENT,
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {u.cargo}
-                      </span>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span className="badge badge-blue">{u.cargo}</span>
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '3px 9px',
-                        background: u.estado === 'activo' ? 'rgba(16,185,129,0.12)' : 'rgba(196,30,58,0.12)',
-                        border: u.estado === 'activo' ? '1px solid rgba(16,185,129,0.35)' : '1px solid rgba(196,30,58,0.35)',
-                        borderRadius: theme.border.radiusFull,
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: u.estado === 'activo' ? '#34d399' : '#ff6b7a',
-                      }}>
-                        {u.estado === 'activo' ? 'Activo' : 'Inactivo'}
-                      </span>
+                    <td style={{ padding: '12px 16px' }}>
+                      {u.estado === 'activo'
+                        ? <span className="badge badge-green">Activo</span>
+                        : <span className="badge badge-red">Inactivo</span>
+                      }
                     </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        <button
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
                           onClick={() => handleAbrirEditar(u)}
                           title="Editar"
                           style={{
-                            width: '30px', height: '30px',
+                            width: '32px', height: '32px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: `${ACCENT}18`, border: `1px solid ${ACCENT}35`,
-                            borderRadius: theme.border.radiusMd,
-                            color: ACCENT, cursor: 'pointer',
-                            transition: 'all 0.15s ease',
+                            background: 'rgba(46,108,164,0.10)',
+                            border: '1px solid rgba(46,108,164,0.20)',
+                            borderRadius: '8px', color: '#2e6ca4', cursor: 'pointer',
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = `${ACCENT}30`; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = `${ACCENT}18`; }}
                         >
                           <Edit2 size={14} />
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
                           onClick={() => handleAbrirEliminar(u)}
                           title="Eliminar"
                           style={{
-                            width: '30px', height: '30px',
+                            width: '32px', height: '32px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: 'rgba(196,30,58,0.12)', border: '1px solid rgba(196,30,58,0.3)',
-                            borderRadius: theme.border.radiusMd,
-                            color: '#ff6b7a', cursor: 'pointer',
-                            transition: 'all 0.15s ease',
+                            background: 'rgba(139,15,15,0.08)',
+                            border: '1px solid rgba(139,15,15,0.20)',
+                            borderRadius: '8px', color: '#b91c1c', cursor: 'pointer',
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(196,30,58,0.25)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(196,30,58,0.12)'; }}
                         >
                           <Trash2 size={14} />
-                        </button>
+                        </motion.button>
                       </div>
                     </td>
-                  </tr>
+                  </motion.tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </motion.div>
 
-      {/* ── Modal: Crear ──────────────────────────────────────────── */}
-      {showCreateDialog && (
-        <Modal title="Crear Nuevo Usuario" onClose={() => setShowCreateDialog(false)} isMobile={isMobile}>
-          <DialogMsg msg={dialogMsg} onClose={() => setDialogMsg({ text: '', type: '' })} />
-          <FormField label="Nombres">
-            <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Apellidos">
-            <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Correo Institucional">
-            <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Contraseña">
-            <input type="password" value={formData.contrasena} onChange={(e) => setFormData({ ...formData, contrasena: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Cargo">
-            <select value={formData.cargo} onChange={(e) => setFormData({ ...formData, cargo: e.target.value })} style={{ ...INPUT_STYLE }}>
-              <option value="">Seleccionar cargo</option>
-              {CARGOS.map(c => <option key={c} value={c} style={{ background: CARD }}>{c}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Estado">
-            <select value={formData.estado} onChange={(e) => setFormData({ ...formData, estado: e.target.value })} style={{ ...INPUT_STYLE }}>
-              <option value="activo" style={{ background: CARD }}>Activo</option>
-              <option value="inactivo" style={{ background: CARD }}>Inactivo</option>
-            </select>
-          </FormField>
-          <ModalActions
-            onCancel={() => setShowCreateDialog(false)}
-            onConfirm={handleCrearUsuario}
-            confirmLabel={isLoading ? 'Creando...' : 'Crear Usuario'}
-            disabled={isLoading}
-          />
-        </Modal>
-      )}
+      {/* ── Modals ──────────────────────────────────────────────────── */}
 
-      {/* ── Modal: Editar ─────────────────────────────────────────── */}
-      {showEditDialog && usuarioAEditar && (
-        <Modal title="Editar Usuario" onClose={() => setShowEditDialog(false)} isMobile={isMobile}>
-          <DialogMsg msg={dialogMsg} onClose={() => setDialogMsg({ text: '', type: '' })} />
-          <FormField label="Nombres">
-            <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Apellidos">
-            <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Correo Institucional">
-            <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Contraseña (dejar vacío para no cambiar)">
-            <input type="password" value={formData.contrasena} onChange={(e) => setFormData({ ...formData, contrasena: e.target.value })} style={INPUT_STYLE} />
-          </FormField>
-          <FormField label="Cargo">
-            <select value={formData.cargo} onChange={(e) => setFormData({ ...formData, cargo: e.target.value })} style={{ ...INPUT_STYLE }}>
-              <option value="">Seleccionar cargo</option>
-              {CARGOS.map(c => <option key={c} value={c} style={{ background: CARD }}>{c}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Estado">
-            <select value={formData.estado} onChange={(e) => setFormData({ ...formData, estado: e.target.value })} style={{ ...INPUT_STYLE }}>
-              <option value="activo" style={{ background: CARD }}>Activo</option>
-              <option value="inactivo" style={{ background: CARD }}>Inactivo</option>
-            </select>
-          </FormField>
-          <ModalActions
-            onCancel={() => setShowEditDialog(false)}
-            onConfirm={handleActualizarUsuario}
-            confirmLabel={isLoading ? 'Guardando...' : 'Guardar Cambios'}
-            disabled={isLoading}
-          />
-        </Modal>
-      )}
+      {/* Crear */}
+      <AnimatePresence>
+        {showCreateDialog && (
+          <UEBModal title="Crear Nuevo Usuario" onClose={() => setShowCreateDialog(false)} isMobile={isMobile}>
+            <DialogMsg msg={dialogMsg} onClose={() => setDialogMsg({ text: '', type: '' })} />
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0 14px' }}>
+              <FormField label="Nombres *">
+                <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                />
+              </FormField>
+              <FormField label="Apellidos *">
+                <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                />
+              </FormField>
+            </div>
+            <FormField label="Correo Institucional *">
+              <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value })} style={inputStyle}
+                onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+              />
+            </FormField>
+            <div style={{ padding: '9px 12px', marginBottom: '14px', background: 'rgba(84,179,224,0.07)', border: '1px solid rgba(84,179,224,0.25)', borderRadius: '8px', fontSize: '12px', color: '#2e6ca4' }}>
+              Se generará una contraseña temporal y se enviará al correo del usuario.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0 14px' }}>
+              <FormField label="Cargo *">
+                <select value={formData.cargo} onChange={(e) => setFormData({ ...formData, cargo: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                >
+                  <option value="">Seleccionar cargo</option>
+                  {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Estado">
+                <select value={formData.estado} onChange={(e) => setFormData({ ...formData, estado: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                >
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </FormField>
+            </div>
+            <ModalActions onCancel={() => setShowCreateDialog(false)} onConfirm={handleCrearUsuario} confirmLabel={isLoading ? 'Creando...' : 'Crear Usuario'} disabled={isLoading} />
+          </UEBModal>
+        )}
+      </AnimatePresence>
 
-      {/* ── Modal: Eliminar ───────────────────────────────────────── */}
-      {showDeleteDialog && usuarioAEliminar && (
-        <Modal title="Confirmar Eliminación" onClose={() => setShowDeleteDialog(false)} isMobile={isMobile} small>
-          <p style={{ color: MUTED, fontSize: '13px', marginBottom: '20px', lineHeight: 1.6 }}>
-            ¿Estás seguro de que deseas eliminar a{' '}
-            <strong style={{ color: TEXT }}>{usuarioAEliminar.nombres} {usuarioAEliminar.apellidos}</strong>?
-            {' '}Esta acción no se puede deshacer.
-          </p>
-          <ModalActions
-            onCancel={() => setShowDeleteDialog(false)}
-            onConfirm={handleEliminarUsuario}
-            confirmLabel={isLoading ? 'Eliminando...' : 'Eliminar'}
-            disabled={isLoading}
-            danger
-          />
-        </Modal>
-      )}
+      {/* Editar */}
+      <AnimatePresence>
+        {showEditDialog && usuarioAEditar && (
+          <UEBModal title="Editar Usuario" onClose={() => setShowEditDialog(false)} isMobile={isMobile}>
+            <DialogMsg msg={dialogMsg} onClose={() => setDialogMsg({ text: '', type: '' })} />
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0 14px' }}>
+              <FormField label="Nombres *">
+                <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                />
+              </FormField>
+              <FormField label="Apellidos *">
+                <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                />
+              </FormField>
+            </div>
+            <FormField label="Correo Institucional *">
+              <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value })} style={inputStyle}
+                onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+              />
+            </FormField>
+            <PasswordField label="Nueva Contraseña (dejar vacío para no cambiar)" value={formData.contrasena} onChange={(e) => setFormData({ ...formData, contrasena: e.target.value })} placeholder="Opcional — mínimo 8 caracteres" />
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0 14px' }}>
+              <FormField label="Cargo *">
+                <select value={formData.cargo} onChange={(e) => setFormData({ ...formData, cargo: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                >
+                  <option value="">Seleccionar cargo</option>
+                  {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Estado">
+                <select value={formData.estado} onChange={(e) => setFormData({ ...formData, estado: e.target.value })} style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
+                >
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </FormField>
+            </div>
+            <ModalActions onCancel={() => setShowEditDialog(false)} onConfirm={handleActualizarUsuario} confirmLabel={isLoading ? 'Guardando...' : 'Guardar Cambios'} disabled={isLoading} />
+          </UEBModal>
+        )}
+      </AnimatePresence>
+
+      {/* Eliminar */}
+      <AnimatePresence>
+        {showDeleteDialog && usuarioAEliminar && (
+          <UEBModal title="Confirmar Eliminación" onClose={() => setShowDeleteDialog(false)} isMobile={isMobile} small>
+            <div style={{
+              width: '52px', height: '52px', borderRadius: '50%',
+              background: 'rgba(139,15,15,0.10)', border: '1px solid rgba(139,15,15,0.20)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}>
+              <Trash2 size={22} color="#b91c1c" />
+            </div>
+            <p style={{ color: 'var(--text-body)', fontSize: '13px', marginBottom: '20px', lineHeight: 1.65, textAlign: 'center' }}>
+              ¿Estás seguro de que deseas eliminar a{' '}
+              <strong style={{ color: 'var(--text-heading)' }}>{usuarioAEliminar.nombres} {usuarioAEliminar.apellidos}</strong>?
+              {' '}Esta acción no se puede deshacer.
+            </p>
+            <ModalActions onCancel={() => setShowDeleteDialog(false)} onConfirm={handleEliminarUsuario} confirmLabel={isLoading ? 'Eliminando...' : 'Eliminar Usuario'} disabled={isLoading} danger />
+          </UEBModal>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 /* ── Sub-components ──────────────────────────────────────────────── */
 
-function Modal({ title, onClose, isMobile, small, children }) {
+function UEBModal({ title, onClose, isMobile, small, children }) {
   return (
-    <div style={{
-      position: 'fixed', inset: 0,
-      background: 'rgba(0,0,0,0.65)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 1000, padding: '16px',
-    }}>
-      <div style={{
-        background: CARD,
-        border: `1px solid ${BORDER}`,
-        borderRadius: theme.border.radiusMd,
-        padding: isMobile ? '20px' : '24px',
-        width: '100%',
-        maxWidth: small ? '400px' : '480px',
-        maxHeight: '90vh',
-        overflow: 'auto',
-        boxShadow: theme.shadow.lg,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: TEXT }}>{title}</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '2px 4px', borderRadius: '4px' }}>✕</button>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(10,25,47,0.50)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1000, padding: '16px',
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'rgba(255,255,255,0.96)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          borderRadius: '18px',
+          padding: isMobile ? '22px' : '28px',
+          width: '100%',
+          maxWidth: small ? '420px' : '540px',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          boxShadow: '0 24px 80px rgba(26,58,92,0.25)',
+          fontFamily: 'var(--font-primary)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-heading)' }}>{title}</h3>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(26,58,92,0.06)', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer',
+              width: '28px', height: '28px', borderRadius: '8px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.12)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.06)'; }}
+          >
+            <X size={14} />
+          </button>
         </div>
         {children}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -511,57 +629,68 @@ function DialogMsg({ msg, onClose }) {
   if (!msg.text) return null;
   const isErr = msg.type === 'error';
   return (
-    <div style={{
-      padding: '9px 12px', marginBottom: '14px',
-      background: isErr ? 'rgba(196,30,58,0.12)' : 'rgba(16,185,129,0.12)',
-      border: `1px solid ${isErr ? 'rgba(196,30,58,0.35)' : 'rgba(16,185,129,0.35)'}`,
-      borderRadius: theme.border.radiusMd,
-      color: isErr ? '#ff6b7a' : '#34d399',
-      fontSize: '13px',
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    }}>
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      style={{
+        padding: '9px 12px', marginBottom: '14px',
+        background: isErr ? 'rgba(139,15,15,0.08)' : 'rgba(5,150,105,0.08)',
+        border: `1px solid ${isErr ? 'rgba(139,15,15,0.22)' : 'rgba(5,150,105,0.22)'}`,
+        borderRadius: '8px',
+        color: isErr ? '#b91c1c' : '#047857',
+        fontSize: '13px', fontWeight: 500,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}
+    >
       <span>{msg.text}</span>
       <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '15px', padding: '0 0 0 10px' }}>✕</button>
-    </div>
+    </motion.div>
   );
 }
 
 function ModalActions({ onCancel, onConfirm, confirmLabel, disabled, danger }) {
   return (
-    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
-      <button
+    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={onCancel}
         style={{
-          padding: '8px 16px', background: 'transparent',
-          border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd,
-          color: MUTED, cursor: 'pointer', fontSize: '13px', fontWeight: 500,
-          fontFamily: theme.typography.fontFamily,
+          padding: '9px 18px',
+          background: 'transparent',
+          border: '1px solid rgba(26,58,92,0.18)',
+          borderRadius: '8px',
+          color: 'var(--text-muted)',
+          cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+          fontFamily: 'var(--font-primary)',
           transition: 'all 0.15s ease',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = ELEV; e.currentTarget.style.color = TEXT; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = MUTED; }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.06)'; e.currentTarget.style.color = 'var(--text-heading)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
       >
         Cancelar
-      </button>
-      <button
+      </motion.button>
+      <motion.button
+        whileHover={!disabled ? { scale: 1.02, boxShadow: danger ? '0 8px 24px rgba(139,15,15,0.35)' : '0 8px 24px rgba(46,108,164,0.35)' } : {}}
+        whileTap={!disabled ? { scale: 0.98 } : {}}
         onClick={onConfirm}
         disabled={disabled}
         style={{
-          padding: '8px 18px',
-          background: danger ? theme.colors.accent.red : ACCENT,
-          border: 'none',
-          borderRadius: theme.border.radiusMd,
-          color: '#fff',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          fontSize: '13px',
-          fontWeight: 600,
-          opacity: disabled ? 0.6 : 1,
-          fontFamily: theme.typography.fontFamily,
-          transition: 'all 0.15s ease',
+          padding: '9px 20px',
+          background: danger
+            ? 'linear-gradient(135deg, #8b0f0f, #b91c1c)'
+            : 'linear-gradient(135deg, #1a3a5c, #2e6ca4)',
+          border: 'none', borderRadius: '8px',
+          color: '#fff', cursor: disabled ? 'not-allowed' : 'pointer',
+          fontSize: '13px', fontWeight: 700, opacity: disabled ? 0.55 : 1,
+          fontFamily: 'var(--font-primary)',
+          boxShadow: danger
+            ? '0 4px 14px rgba(139,15,15,0.25)'
+            : '0 4px 14px rgba(26,58,92,0.25)',
         }}
       >
         {confirmLabel}
-      </button>
+      </motion.button>
     </div>
   );
 }

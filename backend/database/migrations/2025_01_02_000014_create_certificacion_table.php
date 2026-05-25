@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('tipo_doc_respaldo', 100)->nullable();
             $table->string('clase_doc_respaldo', 100)->nullable();
             $table->string('seccion_memorando', 100)->nullable();
-            $table->string('estado', 50)->default('AROBADO');
+            $table->string('estado', 50)->default('APROBADO');
             $table->foreignId('id_usuario')->constrained('usuarios', 'id_usuario');
             $table->foreignId('id_entidad_requiriente')->constrained('entidad_requiriente', 'id_entidad_requiriente');
             $table->foreignId('id_cedula_presupuestaria')->constrained('cedula_presupuestaria', 'id_cedula_presupuestaria');

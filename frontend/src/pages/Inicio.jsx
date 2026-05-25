@@ -1,24 +1,137 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { theme } from '../config/theme';
+import { motion } from 'framer-motion';
+import Cookies from 'js-cookie';
 import {
   Upload, Database, FileText, CheckCircle2, Users,
   ArrowRight, TrendingUp, BarChart3, Activity, Shield,
+  DollarSign, Target, Zap,
 } from 'lucide-react';
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
+  Tooltip, CartesianGrid,
+} from 'recharts';
 
-const BG     = theme.colors.dark['900'];
-const CARD   = theme.colors.dark['800'];
-const BORDER = theme.colors.dark['700'];
-const ELEV   = theme.colors.dark['600'];
-const ACCENT = theme.colors.accent.blue;
-const TEXT   = 'rgba(255,255,255,0.88)';
-const MUTED  = 'rgba(255,255,255,0.45)';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const MONTH_NAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
+/* ── Animated counter — re-dispara cuando target cambia de 0 ─── */
+function useAnimatedCounter(target, duration = 1400, delay = 0) {
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    if (target === 0) { setValue(0); return; }
+    const timer = setTimeout(() => {
+      const startTime = Date.now();
+      const tick = () => {
+        const elapsed  = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased    = 1 - Math.pow(1 - progress, 3);
+        setValue(Math.floor(eased * target));
+        if (progress < 1) requestAnimationFrame(tick);
+        else setValue(target);
+      };
+      requestAnimationFrame(tick);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [target]);
+
+  return value;
+}
+
+/* ── Custom tooltip ───────────────────────────────────────────── */
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.95)',
+      backdropFilter: 'blur(12px)',
+      border: '1px solid rgba(26,58,92,0.12)',
+      borderRadius: '10px',
+      padding: '10px 14px',
+      boxShadow: '0 8px 24px rgba(26,58,92,0.15)',
+      fontFamily: 'var(--font-primary)',
+    }}>
+      <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {label}
+      </p>
+      {payload.map((p, i) => (
+        <p key={i} style={{ margin: '2px 0', fontSize: '13px', fontWeight: 700, color: p.color }}>
+          {p.name}: ${(p.value / 1000).toFixed(1)}K
+        </p>
+      ))}
+    </div>
+  );
+};
+
+/* ── 3D Flip KPI card ────────────────────────────────────────── */
+function FlipCard({ front, back }) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div
+      style={{ perspective: '1000px', cursor: 'pointer', height: '100%' }}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
+    >
+      <motion.div
+        animate={{ rotateY: flipped ? 180 : 0 }}
+        transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
+        style={{ transformStyle: 'preserve-3d', height: '100%', position: 'relative' }}
+      >
+        <div style={{
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+          height: '100%',
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(26,58,92,0.10)',
+          padding: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}>
+          {front}
+        </div>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+          transform: 'rotateY(180deg)',
+          background: 'linear-gradient(135deg, #1a3a5c 0%, #2e6ca4 100%)',
+          borderRadius: '16px',
+          padding: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          boxShadow: '0 8px 32px rgba(26,58,92,0.25)',
+        }}>
+          {back}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* ── Main component ──────────────────────────────────────────── */
 export const Inicio = () => {
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
   const { user }  = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [loading,  setLoading]  = useState(true);
+
+  const [totales, setTotales] = useState({
+    total_codificado: 0, total_certificado: 0, total_saldo: 0,
+    total_items: 0, items_sin_saldo: 0,
+  });
+  const [usuariosCount,  setUsuariosCount]  = useState(0);
+  const [chartData,      setChartData]      = useState([]);
+  const [progressBars,   setProgressBars]   = useState({
+    certVsCod: 0, partidasSaldo: 0, certAprobadas: 0, liqActivas: 0,
+  });
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
@@ -26,152 +139,412 @@ export const Inicio = () => {
     return () => window.removeEventListener('resize', h);
   }, []);
 
+  useEffect(() => { fetchDashboard(); }, []);
+
+  const fetchDashboard = async () => {
+    try {
+      const token   = Cookies.get('auth_token');
+      const authHdr = { Authorization: `Bearer ${token}` };
+
+      const [presRes, usersRes, certRes, liqRes] = await Promise.all([
+        fetch(`${API}/presupuesto-disponible`),
+        fetch(`${API}/usuarios`,                          { headers: authHdr }),
+        fetch(`${API}/reportes/certificaciones/json`,     { headers: authHdr }),
+        fetch(`${API}/reportes/liquidaciones/json`,       { headers: authHdr }),
+      ]);
+
+      const [presJson, usersJson, certJson, liqJson] = await Promise.all([
+        presRes.json(), usersRes.json(), certRes.json(), liqRes.json(),
+      ]);
+
+      /* ── Presupuesto totales ── */
+      if (presJson.success) {
+        setTotales(presJson.totales);
+
+        const t = presJson.totales;
+        const certVsCod     = t.total_codificado  > 0 ? Math.min(100, Math.round((t.total_certificado / t.total_codificado) * 100)) : 0;
+        const partidasSaldo = t.total_items        > 0 ? Math.round(((t.total_items - t.items_sin_saldo) / t.total_items) * 100) : 0;
+
+        /* ── Certificaciones ── */
+        let certAprobadas = 0;
+        if (certJson.success && certJson.data?.length) {
+          const total    = certJson.data.length;
+          const activas  = certJson.data.filter(c => c.estado !== 'ANULADA' && c.estado !== 'ERRADO').length;
+          certAprobadas  = total > 0 ? Math.round((activas / total) * 100) : 0;
+
+          /* Agrupar por mes (año actual) */
+          const currentYear = new Date().getFullYear();
+          const byMonth = {};
+          certJson.data.forEach(c => {
+            const d = new Date(c.fecha_elaboracion);
+            if (d.getFullYear() !== currentYear) return;
+            const m = d.getMonth();
+            byMonth[m] = (byMonth[m] || 0) + parseFloat(c.monto_total || 0);
+          });
+
+          const monthlyBudget = t.total_codificado > 0 ? t.total_codificado / 12 : 0;
+          const currentMonth  = new Date().getMonth();
+          const months = Array.from({ length: currentMonth + 1 }, (_, i) => ({
+            name:        MONTH_NAMES[i],
+            Codificado:  Math.round(monthlyBudget),
+            Certificado: Math.round(byMonth[i] || 0),
+          }));
+          setChartData(months);
+        }
+
+        /* ── Liquidaciones ── */
+        let liqActivas = 0;
+        if (liqJson.success && liqJson.data?.length) {
+          const total   = liqJson.data.length;
+          const activas = liqJson.data.filter(l => l.estado !== 'ANULADA').length;
+          liqActivas    = total > 0 ? Math.round((activas / total) * 100) : 0;
+        }
+
+        setProgressBars({ certVsCod, partidasSaldo, certAprobadas, liqActivas });
+      }
+
+      /* ── Usuarios activos ── */
+      if (usersJson.status === 'success' && usersJson.data?.length) {
+        const activos = usersJson.data.filter(u => u.estado === 'activo').length;
+        setUsuariosCount(activos);
+      }
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* Counters animados desde datos reales */
+  const animTotal    = useAnimatedCounter(totales.total_codificado,  1600, 400);
+  const animUsado    = useAnimatedCounter(totales.total_certificado, 1400, 600);
+  const animDisp     = useAnimatedCounter(totales.total_saldo,       1400, 800);
+  const animUsuarios = useAnimatedCounter(usuariosCount,              900, 500);
+
+  const pctUsado = totales.total_codificado > 0
+    ? Math.round((totales.total_certificado / totales.total_codificado) * 100)
+    : 0;
+  const pctDisp  = totales.total_codificado > 0
+    ? Math.round((totales.total_saldo       / totales.total_codificado) * 100)
+    : 0;
+
+  const P = isMobile ? '20px' : '28px 32px';
+
+  const cardVariants = {
+    hidden:  { opacity: 0, y: 24, scale: 0.97 },
+    visible: (i) => ({
+      opacity: 1, y: 0, scale: 1,
+      transition: { delay: i * 0.09, type: 'spring', stiffness: 120, damping: 18 }
+    }),
+  };
+
   const quickActions = [
-    { title: 'Estructura Presupuestaria', desc: 'Importar datos desde CSV',        icon: <Upload size={22} />,       color: ACCENT,                       path: '/dashboard/estructura-presupuestaria' },
-    { title: 'Ver Datos',                 desc: 'Visualizar información cargada',  icon: <Database size={22} />,     color: theme.colors.accent.teal,     path: '/dashboard/estructura-presupuestaria-data' },
-    { title: 'Cédula Presupuestaria',     desc: 'Gestionar asignaciones',          icon: <FileText size={22} />,     color: theme.colors.accent.gold,     path: '/dashboard/cedula-presupuestaria' },
-    { title: 'Certificaciones',           desc: 'Crear y gestionar certificados',  icon: <CheckCircle2 size={22} />, color: theme.colors.accent.green,    path: '/dashboard/certificacion' },
-    { title: 'Gestionar Usuarios',        desc: 'Administrar acceso de usuarios',  icon: <Users size={22} />,        color: theme.colors.accent.red,      path: '/dashboard/usuarios' },
+    { title: 'Estructura Presupuestaria', desc: 'Importar datos desde CSV',        icon: Upload,       color: '#2e6ca4', path: '/dashboard/estructura-presupuestaria' },
+    { title: 'Ver Datos',                 desc: 'Visualizar información cargada',  icon: Database,     color: '#0891b2', path: '/dashboard/estructura-presupuestaria-data' },
+    { title: 'Cédula Presupuestaria',     desc: 'Gestionar asignaciones',          icon: FileText,     color: '#d97706', path: '/dashboard/cedula-presupuestaria' },
+    { title: 'Certificaciones',           desc: 'Crear y gestionar certificados',  icon: CheckCircle2, color: '#059669', path: '/dashboard/certificacion' },
+    { title: 'Gestionar Usuarios',        desc: 'Administrar acceso de usuarios',  icon: Users,        color: '#8b0f0f', path: '/dashboard/usuarios' },
+    { title: 'Reportes',                  desc: 'Exportar datos y documentos',     icon: BarChart3,    color: '#7c3aed', path: '/dashboard/reportes' },
   ];
-
-  const statCards = [
-    { label: 'Presupuesto Total',     value: '$1,500,000', icon: <BarChart3 size={18} />,  color: ACCENT },
-    { label: 'Presupuesto Utilizado', value: '$750,000',   icon: <TrendingUp size={18} />, color: theme.colors.accent.green },
-    { label: 'Disponible',            value: '$750,000',   icon: <Activity size={18} />,   color: theme.colors.accent.gold },
-    { label: 'Usuarios Activos',      value: '15',         icon: <Shield size={18} />,     color: theme.colors.accent.teal },
-  ];
-
-  const P = isMobile ? '20px' : '32px';
 
   return (
-    <div style={{ background: BG, minHeight: '100%', padding: P, fontFamily: theme.typography.fontFamily }}>
+    <div style={{ background: 'var(--page-bg)', minHeight: '100%', padding: P, fontFamily: 'var(--font-primary)' }}>
 
-      {/* Welcome banner */}
-      <div style={{
-        background: `linear-gradient(135deg, ${CARD}, ${theme.colors.dark['700']})`,
-        border: `1px solid ${BORDER}`,
-        borderLeft: `4px solid ${ACCENT}`,
-        borderRadius: theme.border.radiusMd,
-        padding: isMobile ? '20px' : '28px 32px',
-        marginBottom: '24px',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: 0, right: 0,
-          width: '180px', height: '180px',
-          background: `radial-gradient(circle, ${ACCENT}18, transparent 70%)`,
-          borderRadius: '50%',
-          transform: 'translate(40%, -40%)',
-          pointerEvents: 'none',
-        }} />
+      {/* ── Hero Welcome Banner ────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+        style={{
+          background: 'linear-gradient(135deg, #0d1f35 0%, #1a3a5c 45%, #2e6ca4 100%)',
+          borderRadius: '20px',
+          padding: isMobile ? '24px 20px' : '32px 40px',
+          marginBottom: '24px',
+          position: 'relative',
+          overflow: 'hidden',
+          boxShadow: '0 20px 60px rgba(13,31,53,0.35)',
+        }}
+      >
+        <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '220px', height: '220px', borderRadius: '50%', background: 'rgba(84,179,224,0.10)', backdropFilter: 'blur(8px)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: '-40px', left: '30%', width: '160px', height: '160px', borderRadius: '30px', background: 'rgba(255,255,255,0.04)', transform: 'rotate(25deg)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '20%', right: '15%', width: '80px', height: '80px', borderRadius: '15px', border: '2px solid rgba(84,179,224,0.15)', transform: 'rotate(15deg)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: '10%', right: '5%', width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(84,179,224,0.12)', pointerEvents: 'none' }} />
+
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <p style={{ margin: '0 0 4px', fontSize: '11px', color: MUTED, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+          <motion.p initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
+            style={{ margin: '0 0 6px', fontSize: '10.5px', color: 'rgba(84,179,224,0.85)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
             Universidad Estatal de Bolívar
-          </p>
-          <h1 style={{ margin: '0 0 6px', fontSize: isMobile ? '20px' : '26px', fontWeight: 700, color: TEXT, letterSpacing: '-0.02em' }}>
+          </motion.p>
+          <motion.h1 initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.22 }}
+            style={{ margin: '0 0 8px', fontSize: isMobile ? '22px' : '30px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
             Bienvenido, {user?.nombres?.split(' ')[0] || 'Usuario'}
-          </h1>
-          <p style={{ margin: 0, fontSize: '13px', color: MUTED }}>
-            Panel de control — Sistema de Control Presupuestario
-          </p>
-        </div>
-      </div>
+          </motion.h1>
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.32 }}
+            style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+            Panel de Control — Sistema de Control Presupuestario · Grupos 51 y 58
+          </motion.p>
 
-      {/* Stats */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+            style={{ marginTop: '18px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              { icon: Zap,    label: `Año Fiscal ${new Date().getFullYear()}`, color: '#54b3e0' },
+              { icon: Target, label: 'Grupos 51 y 58',                         color: 'rgba(255,255,255,0.6)' },
+            ].map((tag, i) => {
+              const TagIcon = tag.icon;
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: '5px',
+                  background: 'rgba(255,255,255,0.08)',
+                  backdropFilter: 'blur(6px)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '20px',
+                  padding: '4px 10px',
+                  fontSize: '11px', color: tag.color, fontWeight: 600,
+                }}>
+                  <TagIcon size={11} />
+                  {tag.label}
+                </div>
+              );
+            })}
+          </motion.div>
+        </div>
+      </motion.div>
+
+      {/* ── KPI Cards ─────────────────────────────────────── */}
       <div style={{ marginBottom: '24px' }}>
-        <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: 700, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          Resumen General
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '10px' }}>
-          {statCards.map((s, i) => (
-            <div key={i} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '16px 18px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                <span style={{ color: s.color, display: 'flex' }}>{s.icon}</span>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: MUTED }}>{s.label}</span>
-              </div>
-              <p style={{ margin: 0, fontSize: isMobile ? '18px' : '22px', fontWeight: 700, color: TEXT, letterSpacing: '-0.02em' }}>{s.value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+          style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
+          Resumen Presupuestario
+        </motion.p>
 
-      {/* Progress bars */}
-      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '20px', marginBottom: '24px' }}>
-        <p style={{ margin: '0 0 16px', fontSize: '11px', fontWeight: 700, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          Ejecución Presupuestaria
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '14px', height: isMobile ? 'auto' : '130px' }}>
           {[
-            { label: 'Porcentaje Utilizado', pct: 50, color: ACCENT },
-            { label: 'Proyectos Activos',   pct: 66, color: theme.colors.accent.green },
-          ].map((bar, i) => (
-            <div key={i}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ fontSize: '13px', color: MUTED }}>{bar.label}</span>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: bar.color }}>{bar.pct}%</span>
-              </div>
-              <div style={{ width: '100%', height: '6px', background: ELEV, borderRadius: theme.border.radiusFull, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${bar.pct}%`, background: bar.color, borderRadius: theme.border.radiusFull, transition: 'width 0.6s ease' }} />
-              </div>
-            </div>
-          ))}
+            {
+              label: 'Presupuesto Total', value: animTotal,    prefix: '$', icon: DollarSign, color: '#2e6ca4',
+              frontSub: 'Codificado total',
+              backLabel: 'Distribución', backVal: '100% asignado', backSub: 'Codificado total del año fiscal',
+            },
+            {
+              label: 'Certificado',       value: animUsado,    prefix: '$', icon: TrendingUp,  color: '#d97706',
+              frontSub: `${pctUsado}% del total`,
+              backLabel: 'Estado', backVal: `${pctUsado}% ejecutado`, backSub: 'Certificaciones emitidas acumuladas',
+            },
+            {
+              label: 'Disponible',        value: animDisp,     prefix: '$', icon: Activity,    color: '#059669',
+              frontSub: `${pctDisp}% restante`,
+              backLabel: 'Saldo libre', backVal: `${pctDisp}% disponible`, backSub: 'Partidas con saldo para certificar',
+            },
+            {
+              label: 'Usuarios Activos',  value: animUsuarios, prefix: '', icon: Shield,       color: '#7c3aed',
+              frontSub: 'En el sistema',
+              backLabel: 'Accesos', backVal: 'Activos hoy', backSub: 'Usuarios con sesión habilitada',
+            },
+          ].map((card, i) => {
+            const CardIcon = card.icon;
+            return (
+              <motion.div key={i} custom={i} variants={cardVariants} initial="hidden" animate="visible"
+                style={{ height: isMobile ? '120px' : '100%' }}>
+                <FlipCard
+                  front={
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {card.label}
+                        </span>
+                        <div style={{
+                          width: '32px', height: '32px', borderRadius: '9px',
+                          background: `${card.color}15`, border: `1px solid ${card.color}30`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <CardIcon size={15} color={card.color} />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 'auto' }}>
+                        <p style={{ margin: '0 0 2px', fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--text-heading)', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
+                          {loading ? '—' : `${card.prefix}${card.value.toLocaleString('es-EC')}`}
+                        </p>
+                        <p style={{ margin: 0, fontSize: '11px', color: card.color, fontWeight: 600 }}>
+                          {card.frontSub}
+                        </p>
+                      </div>
+                    </>
+                  }
+                  back={
+                    <>
+                      <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: 700, color: 'rgba(84,179,224,0.8)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        {card.backLabel}
+                      </p>
+                      <p style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 800, color: '#fff' }}>
+                        {card.backVal}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+                        {card.backSub}
+                      </p>
+                    </>
+                  }
+                />
+              </motion.div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Quick actions */}
+      {/* ── Chart + Progress ──────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: '16px', marginBottom: '24px' }}>
+
+        {/* Bar Chart */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5, duration: 0.4 }}
+          style={{
+            background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255,255,255,0.95)', borderRadius: '16px',
+            boxShadow: '0 4px 24px rgba(26,58,92,0.10)', padding: '20px',
+          }}
+        >
+          <div style={{ marginBottom: '16px' }}>
+            <h3 style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: 700, color: 'var(--text-heading)' }}>
+              Evolución Presupuestaria
+            </h3>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+              Codificado vs. Certificado ({new Date().getFullYear()})
+            </p>
+          </div>
+
+          {loading || chartData.length === 0 ? (
+            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              {loading ? 'Cargando datos…' : 'Sin certificaciones registradas este año'}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartData} barGap={4} barCategoryGap="25%">
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(26,58,92,0.07)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v/1000).toFixed(0)}K`} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(26,58,92,0.05)' }} />
+                <Bar dataKey="Codificado"  fill="#2e6ca4" radius={[6,6,0,0]} isAnimationActive animationDuration={1200} />
+                <Bar dataKey="Certificado" fill="#54b3e0" radius={[6,6,0,0]} isAnimationActive animationDuration={1400} animationBegin={200} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+
+          <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+            {[{ color: '#2e6ca4', label: 'Codificado' }, { color: '#54b3e0', label: 'Certificado' }].map((l, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: l.color }} />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{l.label}</span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Progress bars */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.55, duration: 0.4 }}
+          style={{
+            background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255,255,255,0.95)', borderRadius: '16px',
+            boxShadow: '0 4px 24px rgba(26,58,92,0.10)', padding: '20px',
+            display: 'flex', flexDirection: 'column',
+          }}
+        >
+          <div style={{ marginBottom: '20px' }}>
+            <h3 style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: 700, color: 'var(--text-heading)' }}>
+              Ejecución Presupuestaria
+            </h3>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+              Avance del ejercicio fiscal {new Date().getFullYear()}
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, justifyContent: 'center' }}>
+            {[
+              { label: 'Certificado vs Codificado', pct: progressBars.certVsCod,    color: '#2e6ca4', gradient: 'linear-gradient(90deg, #1a3a5c, #2e6ca4)' },
+              { label: 'Certificaciones Activas',   pct: progressBars.certAprobadas, color: '#059669', gradient: 'linear-gradient(90deg, #047857, #059669)' },
+              { label: 'Partidas con Saldo',        pct: progressBars.partidasSaldo, color: '#54b3e0', gradient: 'linear-gradient(90deg, #2e6ca4, #54b3e0)' },
+              { label: 'Liquidaciones Activas',     pct: progressBars.liqActivas,    color: '#d97706', gradient: 'linear-gradient(90deg, #b45309, #d97706)' },
+            ].map((bar, i) => (
+              <div key={i}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '7px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>{bar.label}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: bar.color }}>
+                    {loading ? '—' : `${bar.pct}%`}
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: '7px', background: 'rgba(26,58,92,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: loading ? '0%' : `${bar.pct}%` }}
+                    transition={{ duration: 1.2, delay: 0.7 + i * 0.15, ease: 'easeOut' }}
+                    style={{ height: '100%', background: bar.gradient, borderRadius: '999px', boxShadow: `0 2px 8px ${bar.color}55` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      </div>
+
+      {/* ── Quick Actions ─────────────────────────────────── */}
       <div>
-        <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: 700, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+          style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
           Acciones Rápidas
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '10px' }}>
-          {quickActions.map((a, i) => (
-            <button
-              key={i}
-              onClick={() => navigate(a.path)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '14px',
-                padding: '16px', background: CARD, border: `1px solid ${BORDER}`,
-                borderRadius: theme.border.radiusMd, cursor: 'pointer',
-                textAlign: 'left', transition: 'all 0.18s ease',
-                fontFamily: theme.typography.fontFamily, color: TEXT,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = ELEV;
-                e.currentTarget.style.borderColor = a.color + '55';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.25)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = CARD;
-                e.currentTarget.style.borderColor = BORDER;
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <div style={{
-                width: '40px', height: '40px', borderRadius: theme.border.radiusMd,
-                background: a.color + '1a', border: `1px solid ${a.color}44`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: a.color, flexShrink: 0,
-              }}>
-                {a.icon}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: 600, color: TEXT }}>{a.title}</p>
-                <p style={{ margin: 0, fontSize: '11px', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.desc}</p>
-              </div>
-              <ArrowRight size={14} style={{ color: MUTED, flexShrink: 0 }} />
-            </button>
-          ))}
+        </motion.p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+          {quickActions.map((action, i) => {
+            const Icon = action.icon;
+            return (
+              <motion.button
+                key={i} custom={i} variants={cardVariants} initial="hidden" animate="visible"
+                whileHover={{ y: -4, boxShadow: '0 16px 40px rgba(26,58,92,0.16)', scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => navigate(action.path)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '14px',
+                  padding: '16px 18px',
+                  background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                  border: '1px solid rgba(255,255,255,0.95)', borderRadius: '14px',
+                  boxShadow: '0 4px 20px rgba(26,58,92,0.08)',
+                  cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-primary)',
+                  transition: 'border-color 0.18s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${action.color}40`; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.95)'; }}
+              >
+                <div style={{
+                  width: '42px', height: '42px', borderRadius: '12px',
+                  background: `${action.color}12`, border: `1px solid ${action.color}25`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: action.color, flexShrink: 0, transition: 'all 0.18s ease',
+                }}>
+                  <Icon size={20} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: '0 0 3px', fontSize: '13px', fontWeight: 700, color: 'var(--text-heading)', lineHeight: 1.2 }}>
+                    {action.title}
+                  </p>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {action.desc}
+                  </p>
+                </div>
+                <ArrowRight size={15} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
+              </motion.button>
+            );
+          })}
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-        <p style={{ margin: 0, fontSize: '11px', color: MUTED }}>Sistema Control Presupuestario © 2025 — UEB</p>
-        <p style={{ margin: 0, fontSize: '11px', color: MUTED }}>Versión 1.0</p>
-      </div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }}
+        style={{ marginTop: '28px', paddingTop: '16px', borderTop: '1px solid rgba(26,58,92,0.08)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-light)' }}>
+          Sistema Control Presupuestario © {new Date().getFullYear()} — UEB
+        </p>
+        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-light)' }}>
+          Versión 1.0
+        </p>
+      </motion.div>
     </div>
   );
 };

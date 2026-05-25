@@ -29,21 +29,29 @@ class CertificacionController extends Controller
     public function index(Request $request)
     {
         try {
-            $page = $request->input('page', 1);
-            $limit = $request->input('limit', 10);
-            $search = $request->input('search', '');
-            $estado = $request->input('estado', '');
-            $desde = $request->input('desde', '');
-            $hasta = $request->input('hasta', '');
+            $page    = $request->input('page', 1);
+            $limit   = $request->input('limit', 10);
+            $search  = $request->input('search', '');
+            $estado  = $request->input('estado', '');
+            $desde   = $request->input('desde', '');
+            $hasta   = $request->input('hasta', '');
+            $idCedula = $request->input('id_cedula_presupuestaria', '');
 
             $offset = ($page - 1) * $limit;
 
             $query = Certificacion::with('usuario', 'entidadRequiriente');
 
+            // Filtro por año fiscal (cédula)
+            if ($idCedula) {
+                $query->where('id_cedula_presupuestaria', $idCedula);
+            }
+
             // Filtros
             if ($search) {
-                $query->where('numero_certificado', 'LIKE', "%$search%")
+                $query->where(function ($q) use ($search) {
+                    $q->where('numero_certificado', 'LIKE', "%$search%")
                       ->orWhere('descripcion', 'LIKE', "%$search%");
+                });
             }
 
             if ($estado) {
@@ -804,8 +812,7 @@ class CertificacionController extends Controller
                 'id_entidad_requiriente',
                 'nombre_entidad',
                 'responsable_entidad',
-                'correo_institucional',
-                'memorando'
+                'correo_institucional'
             )->get();
 
             return response()->json([
@@ -830,14 +837,12 @@ class CertificacionController extends Controller
                 'nombre_entidad' => 'required|string|max:100',
                 'responsable_entidad' => 'required|string|max:100',
                 'correo_institucional' => 'required|email|max:100',
-                'memorando' => 'required|string|max:100',
             ]);
 
             $entidad = EntidadRequiriente::create([
                 'nombre_entidad' => $request->nombre_entidad,
                 'responsable_entidad' => $request->responsable_entidad,
                 'correo_institucional' => $request->correo_institucional,
-                'memorando' => $request->memorando,
             ]);
 
             return response()->json([

@@ -1,48 +1,45 @@
 import { useState } from 'react'
 import Cookies from 'js-cookie'
 import { useAuth } from '../contexts/AuthContext'
-import { theme } from '../config/theme'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, ShieldCheck, X } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
-const CARD   = theme.colors.dark['800']
-const BORDER = theme.colors.dark['700']
-const ELEV   = theme.colors.dark['600']
-const ACCENT = theme.colors.accent.blue
-const GREEN  = theme.colors.accent.green
-const RED    = '#ff6b7a'
-const GOLD   = theme.colors.accent.gold
-const TEXT   = 'rgba(255,255,255,0.88)'
-const MUTED  = 'rgba(255,255,255,0.45)'
+const inputStyle = {
+  width: '100%', padding: '9px 36px 9px 32px',
+  background: '#f8fafd',
+  border: '1px solid rgba(46,108,164,0.22)',
+  borderRadius: '8px',
+  color: '#1a3a5c', fontSize: '13px',
+  fontFamily: 'var(--font-primary)',
+  outline: 'none', boxSizing: 'border-box',
+  transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
+}
 
 function PasswordField({ label, value, onChange, placeholder }) {
   const [show, setShow] = useState(false)
   return (
     <div style={{ marginBottom: '14px' }}>
-      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: MUTED, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#5a7a9f', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-primary)' }}>
         {label}
       </label>
       <div style={{ position: 'relative' }}>
-        <Lock size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: MUTED, pointerEvents: 'none' }} />
+        <Lock size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8fa3c0', pointerEvents: 'none' }} />
         <input
           type={show ? 'text' : 'password'}
           value={value}
           onChange={onChange}
           placeholder={placeholder}
           required
-          style={{
-            width: '100%', padding: '9px 36px 9px 32px',
-            background: ELEV, border: `1px solid ${BORDER}`,
-            borderRadius: theme.border.radiusMd, color: TEXT,
-            fontSize: '13px', fontFamily: theme.typography.fontFamily,
-            outline: 'none', boxSizing: 'border-box',
-          }}
+          style={inputStyle}
+          onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
+          onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
         />
         <button
           type="button"
           onClick={() => setShow(s => !s)}
-          style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: 0, display: 'flex' }}
+          style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#8fa3c0', cursor: 'pointer', padding: 0, display: 'flex' }}
         >
           {show ? <EyeOff size={13} /> : <Eye size={13} />}
         </button>
@@ -98,120 +95,192 @@ export default function CambiarContrasenaModal({ onClose }) {
   }
 
   return (
-    // Overlay
-    <div
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       onClick={esObligatoria ? undefined : onClose}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(3px)',
+        background: 'rgba(10,25,47,0.50)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         zIndex: 1000,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px',
       }}
     >
-      {/* Modal */}
-      <div
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 20 }}
+        transition={{ type: 'spring', stiffness: 160, damping: 22 }}
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: CARD, border: `1px solid ${BORDER}`,
-          borderRadius: theme.border.radiusMd,
+          background: 'rgba(255,255,255,0.97)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          borderRadius: '20px',
           width: '100%', maxWidth: '420px',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
-          fontFamily: theme.typography.fontFamily,
+          boxShadow: '0 24px 80px rgba(10,25,47,0.25)',
+          fontFamily: 'var(--font-primary)',
+          overflow: 'hidden',
         }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px', borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-            <ShieldCheck size={17} color={ACCENT} />
-            <span style={{ fontSize: '15px', fontWeight: 700, color: TEXT }}>Cambiar Contraseña</span>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '20px 22px',
+          background: 'linear-gradient(135deg, #0d1f35, #1a3a5c)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <ShieldCheck size={18} color="#54b3e0" />
+            <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>Cambiar Contraseña</span>
           </div>
           {!esObligatoria && (
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: '2px', display: 'flex', borderRadius: '4px' }}>
-              <X size={16} />
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.10)', border: 'none',
+                color: 'rgba(255,255,255,0.7)', cursor: 'pointer',
+                width: '28px', height: '28px', borderRadius: '8px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <X size={14} />
             </button>
           )}
         </div>
 
-        <div style={{ padding: '20px' }}>
-
+        <div style={{ padding: '22px' }}>
           {/* Aviso contraseña temporal */}
           {esObligatoria && (
-            <div style={{ background: 'rgba(217,119,6,0.10)', border: `1px solid rgba(217,119,6,0.35)`, borderRadius: theme.border.radiusMd, padding: '10px 13px', marginBottom: '16px', display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
-              <AlertCircle size={14} color={GOLD} style={{ flexShrink: 0, marginTop: '1px' }} />
-              <span style={{ fontSize: '12px', color: 'rgba(251,191,36,0.9)' }}>
+            <div style={{
+              background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.22)',
+              borderRadius: '10px', padding: '10px 13px', marginBottom: '16px',
+              display: 'flex', gap: '9px', alignItems: 'flex-start',
+            }}>
+              <AlertCircle size={14} color="#d97706" style={{ flexShrink: 0, marginTop: '1px' }} />
+              <span style={{ fontSize: '12px', color: '#b45309', lineHeight: 1.5 }}>
                 Tu cuenta tiene una contraseña temporal. Debes cambiarla para continuar.
               </span>
             </div>
           )}
 
           {/* Éxito */}
-          {ok && (
-            <div style={{ background: 'rgba(16,185,129,0.10)', border: `1px solid rgba(16,185,129,0.3)`, borderRadius: theme.border.radiusMd, padding: '10px 13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '9px' }}>
-              <CheckCircle size={14} color={GREEN} />
-              <span style={{ fontSize: '13px', fontWeight: 600, color: GREEN }}>¡Contraseña actualizada correctamente!</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {ok && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                style={{
+                  background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)',
+                  borderRadius: '10px', padding: '10px 13px', marginBottom: '16px',
+                  display: 'flex', alignItems: 'center', gap: '9px',
+                }}
+              >
+                <CheckCircle size={14} color="#059669" />
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#047857' }}>¡Contraseña actualizada correctamente!</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Error */}
-          {error && (
-            <div style={{ background: 'rgba(196,30,58,0.10)', border: `1px solid rgba(196,30,58,0.35)`, borderRadius: theme.border.radiusMd, padding: '10px 13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertCircle size={13} color={RED} style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '12px', color: RED }}>{error}</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                style={{
+                  background: 'rgba(139,15,15,0.08)', border: '1px solid rgba(139,15,15,0.22)',
+                  borderRadius: '10px', padding: '10px 13px', marginBottom: '16px',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                }}
+              >
+                <AlertCircle size={13} color="#b91c1c" style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: '#b91c1c' }}>{error}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Formulario */}
+          {/* Form */}
           <form onSubmit={handleSubmit}>
             <PasswordField label="Contraseña actual *"    value={form.actual}    onChange={set('actual')}    placeholder="Tu contraseña actual" />
             <PasswordField label="Nueva contraseña *"     value={form.nueva}     onChange={set('nueva')}     placeholder="Mínimo 8 caracteres" />
             <PasswordField label="Confirmar contraseña *" value={form.confirmar} onChange={set('confirmar')} placeholder="Repite la nueva contraseña" />
 
-            {/* Requisitos en tiempo real */}
+            {/* Real-time requirements */}
             {(form.nueva || form.confirmar) && (
-              <div style={{ background: ELEV, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, padding: '9px 12px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{
+                  background: 'rgba(240,244,248,0.8)',
+                  border: '1px solid rgba(26,58,92,0.10)',
+                  borderRadius: '8px', padding: '9px 12px',
+                  marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '5px',
+                }}
+              >
                 {[
                   { ok: nuevaOk,  text: 'Mínimo 8 caracteres' },
                   { ok: coincide, text: 'Las contraseñas coinciden' },
                 ].map((r, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: r.ok ? GREEN : MUTED }}>
-                    <CheckCircle size={11} style={{ opacity: r.ok ? 1 : 0.3 }} />
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: r.ok ? '#059669' : '#8fa3c0', fontWeight: r.ok ? 700 : 500 }}>
+                    <CheckCircle size={11} style={{ opacity: r.ok ? 1 : 0.3 }} color={r.ok ? '#059669' : '#8fa3c0'} />
                     {r.text}
                   </div>
                 ))}
-              </div>
+              </motion.div>
             )}
 
-            {/* Botones */}
+            {/* Buttons */}
             <div style={{ display: 'flex', gap: '8px' }}>
               {!esObligatoria && (
                 <button
                   type="button"
                   onClick={onClose}
-                  style={{ flex: 1, padding: '9px', background: ELEV, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: theme.border.radiusMd, cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: theme.typography.fontFamily }}
+                  style={{
+                    flex: 1, padding: '9px',
+                    background: 'rgba(26,58,92,0.06)',
+                    color: '#5a7a9f',
+                    border: '1px solid rgba(26,58,92,0.12)',
+                    borderRadius: '8px', cursor: 'pointer',
+                    fontSize: '13px', fontWeight: 600,
+                    fontFamily: 'var(--font-primary)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.10)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.06)'; }}
                 >
                   Cancelar
                 </button>
               )}
-              <button
+              <motion.button
+                whileHover={!saving && puedeEnviar && !ok ? { scale: 1.02, boxShadow: '0 8px 24px rgba(26,58,92,0.30)' } : {}}
+                whileTap={!saving && puedeEnviar && !ok ? { scale: 0.98 } : {}}
                 type="submit"
                 disabled={saving || !puedeEnviar || ok}
                 style={{
                   flex: 2, padding: '9px',
-                  background: (saving || !puedeEnviar || ok) ? ELEV : ACCENT,
-                  color: (saving || !puedeEnviar || ok) ? MUTED : '#fff',
-                  border: 'none', borderRadius: theme.border.radiusMd,
+                  background: (saving || !puedeEnviar || ok)
+                    ? 'rgba(26,58,92,0.08)'
+                    : 'linear-gradient(135deg, #1a3a5c, #2e6ca4)',
+                  color: (saving || !puedeEnviar || ok) ? '#8fa3c0' : '#fff',
+                  border: 'none', borderRadius: '8px',
                   cursor: (saving || !puedeEnviar || ok) ? 'default' : 'pointer',
-                  fontSize: '13px', fontWeight: 700, fontFamily: theme.typography.fontFamily,
+                  fontSize: '13px', fontWeight: 700,
+                  fontFamily: 'var(--font-primary)',
+                  boxShadow: (saving || !puedeEnviar || ok) ? 'none' : '0 4px 16px rgba(26,58,92,0.25)',
+                  transition: 'all 0.18s ease',
                 }}
               >
-                {saving ? 'Guardando...' : ok ? 'Contraseña cambiada ✓' : 'Cambiar Contraseña'}
-              </button>
+                {saving ? 'Guardando...' : ok ? '¡Contraseña cambiada!' : 'Cambiar Contraseña'}
+              </motion.button>
             </div>
           </form>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

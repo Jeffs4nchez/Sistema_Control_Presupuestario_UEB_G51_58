@@ -267,7 +267,8 @@ class LiquidacionController extends Controller
     public function certificaciones(Request $request)
     {
         try {
-            $search = $request->input('search', '');
+            $search   = $request->input('search', '');
+            $idCedula = $request->input('id_cedula_presupuestaria', '');
 
             $query = DB::table('certificacion_items as ci')
                 ->join('certificacion as c',         'ci.id_certificacion', '=', 'c.id_certificacion')
@@ -288,6 +289,10 @@ class LiquidacionController extends Controller
                 )
                 ->where('ci.monto', '>', 0)
                 ->where('c.estado', '!=', 'ERRADO');
+
+            if ($idCedula) {
+                $query->where('c.id_cedula_presupuestaria', $idCedula);
+            }
 
             if ($search) {
                 $query->where(function ($q) use ($search) {

@@ -77,13 +77,13 @@ export const Login = () => {
       } else {
         // Mensajes de error más específicos
         let errorMessage = result.error || 'Error al iniciar sesión';
-        
+
         if (errorMessage.includes('Usuario no encontrado')) {
           errorMessage = '👤 El usuario no existe en el sistema';
         } else if (errorMessage.includes('Contraseña incorrecta')) {
           errorMessage = '🔑 Contraseña incorrecta. Intenta de nuevo';
         }
-        
+
         setError(errorMessage);
       }
     } catch (err) {
@@ -96,8 +96,8 @@ export const Login = () => {
   return (
     <>
       {isLoading && <LoadingScreen message="Verificando credenciales..." />}
-      
-    <div 
+
+    <div
       style={{
         minHeight: '100vh',
         width: '100%',
@@ -125,7 +125,7 @@ export const Login = () => {
         boxShadow: theme.shadow.lg,
         margin: isMobile ? theme.components.login.containerMobile.margin : '0'
       }}>
-        
+
         {/* LOGO - 50% del ancho (en desktop), 100% en móvil */}
         <div style={{
           width: isMobile ? '100%' : '50%',
@@ -134,7 +134,7 @@ export const Login = () => {
           justifyContent: isMobile ? 'center' : 'flex-end',
           padding: isMobile ? `${theme.spacing.lg} ${theme.spacing.md}` : theme.spacing['3xl']
         }}>
-          <img 
+          <img
             src={logoSNC}
             alt="SNC UEB Logo"
             style={{
@@ -177,16 +177,16 @@ export const Login = () => {
             }}>
               <span style={{ fontSize: '20px', lineHeight: '1.4' }}>⚠️</span>
               <div style={{ flex: 1 }}>
-                <p style={{ 
-                  color: theme.colors.error.text, 
+                <p style={{
+                  color: theme.colors.error.text,
                   fontSize: theme.typography.fontSize.sm,
                   fontWeight: theme.typography.fontWeight.medium,
                   margin: '0 0 4px 0'
                 }}>
                   Error al iniciar sesión
                 </p>
-                <p style={{ 
-                  color: '#b91c1c', 
+                <p style={{
+                  color: '#b91c1c',
                   fontSize: isMobile ? theme.typography.fontSize.xs : theme.typography.fontSize.sm,
                   margin: '0'
                 }}>
@@ -199,7 +199,7 @@ export const Login = () => {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
             {/* Campo Correo */}
             <div>
-              <div style={{ 
+              <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '90px 1fr' : '160px 1fr',
                 alignItems: 'flex-start',
@@ -214,7 +214,7 @@ export const Login = () => {
                   <span style={{ color: theme.colors.text.error, marginRight: '4px' }}>*</span> Correo Institucional:
                 </label>
                 <div style={{ width: '100%' }}>
-                  <input 
+                  <input
                     type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -246,8 +246,8 @@ export const Login = () => {
                     }}
                   />
                   {fieldErrors.email && (
-                    <p style={{ 
-                      color: '#dc2626', 
+                    <p style={{
+                      color: '#dc2626',
                       fontSize: theme.typography.fontSize.xs,
                       margin: `4px 0 0 0`,
                       fontWeight: theme.typography.fontWeight.medium
@@ -261,7 +261,7 @@ export const Login = () => {
 
             {/* Campo Contraseña */}
             <div>
-              <div style={{ 
+              <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '90px 1fr' : '160px 1fr',
                 alignItems: 'flex-start',
@@ -276,7 +276,7 @@ export const Login = () => {
                   <span style={{ color: theme.colors.text.error, marginRight: '4px' }}>*</span> Contraseña:
                 </label>
                 <div style={{ width: '100%' }}>
-                  <input 
+                  <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -308,8 +308,8 @@ export const Login = () => {
                     }}
                   />
                   {fieldErrors.password && (
-                    <p style={{ 
-                      color: '#dc2626', 
+                    <p style={{
+                      color: '#dc2626',
                       fontSize: theme.typography.fontSize.xs,
                       margin: `4px 0 0 0`,
                       fontWeight: theme.typography.fontWeight.medium
@@ -322,8 +322,8 @@ export const Login = () => {
             </div>
 
             {/* Acciones */}
-            <div style={{ 
-              display: 'flex', 
+            <div style={{
+              display: 'flex',
               flexDirection: 'column',
               alignItems: isMobile ? 'stretch' : 'flex-end',
               gap: '1.25rem',
@@ -348,7 +348,7 @@ export const Login = () => {
               >
                 He olvidado mi contraseña
               </button>
-              <button 
+              <button
                 type="submit"
                 disabled={isLoading}
                 style={{
@@ -387,4 +387,3 @@ export const Login = () => {
     </>
   );
 };
-
