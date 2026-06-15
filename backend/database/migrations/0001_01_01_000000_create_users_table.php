@@ -24,6 +24,7 @@ return new class extends Migration
             $table->string('cargo', 100);
             $table->string('estado', 50);
             $table->boolean('contrasena_temporal')->default(false);
+            $table->unsignedTinyInteger('intentos_fallidos')->default(0);
             $table->string('password_reset_token')->nullable()->unique();
             $table->timestamp('password_reset_expires_at')->nullable();
             $table->rememberToken();
@@ -53,10 +54,11 @@ return new class extends Migration
             'email_verified_at' => now(),
             'contrasena' => Hash::make('jeff2003'),
             'api_token' => 'a'.str_repeat('0', 63),
-            'cargo' => 'Director Financiero',
-            'estado' => 'ACTIVO',
+            'cargo' => 'Director(a) Financiero',
+            'estado' => 'activo',
             'created_at' => now(),
             'updated_at' => now(),
+            
         ]);
     }
 

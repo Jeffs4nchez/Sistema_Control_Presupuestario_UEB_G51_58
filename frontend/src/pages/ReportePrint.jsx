@@ -21,7 +21,7 @@ function TablaCertificaciones({ data }) {
             <th>N° Certificado</th>
             <th>Fecha</th>
             <th>Estado</th>
-            <th>Entidad Requiriente</th>
+            <th>Unidad Requiriente</th>
             <th>Responsable</th>
             <th>Año Cédula</th>
             <th>Memorando</th>

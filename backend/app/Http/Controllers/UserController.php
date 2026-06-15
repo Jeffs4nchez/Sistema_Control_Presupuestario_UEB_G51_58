@@ -7,14 +7,26 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Auth;
 
 class UserController extends Controller
 {
+    private static array $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema'];
+
+    private function denegarSiNoEsAdmin(): ?\Illuminate\Http\JsonResponse
+    {
+        if (!in_array(Auth::user()?->cargo, self::$rolesPermitidos)) {
+            return response()->json(['status' => 'error', 'message' => 'No tiene permiso para gestionar usuarios'], 403);
+        }
+        return null;
+    }
+
     /**
      * Obtener lista de todos los usuarios
      */
     public function index()
     {
+        if ($deny = $this->denegarSiNoEsAdmin()) return $deny;
         try {
             $usuarios = User::select(
                 'id_usuario',
@@ -44,13 +56,14 @@ class UserController extends Controller
      */
     public function store(Request $request)
     {
+        if ($deny = $this->denegarSiNoEsAdmin()) return $deny;
         try {
             $validated = $request->validate([
                 'nombres'              => 'required|string|max:100',
                 'apellidos'            => 'required|string|max:100',
                 'correo_institucional' => 'required|string|email|max:100|unique:usuarios,correo_institucional',
-                'cargo'                => 'required|string|in:Director(a) financiera,Analista de presupuesto,Director(a) de talento humano,Rector',
-                'estado'               => 'required|string|in:activo,inactivo',
+                'cargo'                => 'required|string|in:Director(a) financiero,Analista de presupuesto 1,Analista de presupuesto 3,Director(a) de talento humano,Rector',
+                'estado'               => 'required|string|in:activo,inactivo,bloqueado',
             ]);
 
             $contrasenaTemp = $this->generarContrasenaAleatoria();
@@ -133,6 +146,7 @@ class UserController extends Controller
      */
     public function show($id)
     {
+        if ($deny = $this->denegarSiNoEsAdmin()) return $deny;
         try {
             $usuario = User::find($id);
 
@@ -169,6 +183,7 @@ class UserController extends Controller
      */
     public function update(Request $request, $id)
     {
+        if ($deny = $this->denegarSiNoEsAdmin()) return $deny;
         try {
             $usuario = User::find($id);
 
@@ -185,8 +200,8 @@ class UserController extends Controller
                 'apellidos' => 'sometimes|required|string|max:100',
                 'correo_institucional' => 'sometimes|required|string|email|max:100|unique:usuarios,correo_institucional,' . $id . ',id_usuario',
                 'contrasena' => 'sometimes|nullable|string|min:6',
-                'cargo' => 'sometimes|required|string|in:Director(a) financiera,Analista de presupuesto,Director(a) de talento humano,Rector',
-                'estado' => 'sometimes|required|string|in:activo,inactivo'
+                'cargo' => 'sometimes|required|string|in:Director(a) financiero,Analista de presupuesto 1,Analista de presupuesto 3,Director(a) de talento humano,Rector',
+                'estado' => 'sometimes|required|string|in:activo,inactivo,bloqueado'
             ]);
 
             // Actualizar campos
@@ -229,10 +244,35 @@ class UserController extends Controller
     }
 
     /**
+     * Desbloquear cuenta bloqueada por intentos fallidos
+     */
+    public function desbloquear($id)
+    {
+        if ($deny = $this->denegarSiNoEsAdmin()) return $deny;
+        try {
+            $usuario = User::find($id);
+            if (!$usuario) {
+                return response()->json(['status' => 'error', 'message' => 'Usuario no encontrado'], 404);
+            }
+            $usuario->estado            = 'activo';
+            $usuario->intentos_fallidos = 0;
+            $usuario->save();
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Cuenta desbloqueada correctamente',
+                'data'    => ['id_usuario' => $usuario->id_usuario, 'estado' => $usuario->estado],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => 'Error al desbloquear: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Eliminar usuario
      */
     public function destroy($id)
     {
+        if ($deny = $this->denegarSiNoEsAdmin()) return $deny;
         try {
             $usuario = User::find($id);
 

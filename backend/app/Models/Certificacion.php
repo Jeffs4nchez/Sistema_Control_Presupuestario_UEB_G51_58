@@ -14,15 +14,13 @@ class Certificacion extends Model
         'numero_certificado',
         'descripcion',
         'fecha_elaboracion',
-        'unid_ejecutora',
-        'des_u_ejecutora',
         'clase_registro',
         'clase_gasto',
         'tipo_doc_respaldo',
         'clase_doc_respaldo',
         'estado',
         'id_usuario',
-        'id_entidad_requiriente',
+        'id_unidad_requiriente',
         'id_cedula_presupuestaria',
         'seccion_memorando'
     ];
@@ -56,7 +54,7 @@ class Certificacion extends Model
      */
     public function entidadRequiriente(): BelongsTo
     {
-        return $this->belongsTo(EntidadRequiriente::class, 'id_entidad_requiriente', 'id_entidad_requiriente');
+        return $this->belongsTo(EntidadRequiriente::class, 'id_unidad_requiriente', 'id_unidad_requiriente');
     }
 
     /**
@@ -90,21 +88,21 @@ class Certificacion extends Model
     public function getDetalles()
     {
         return [
-            'id_certificacion' => $this->id_certificacion,
-            'numero_certificado' => $this->numero_certificado,
+            'id_certificacion'         => $this->id_certificacion,
+            'id_cedula_presupuestaria' => $this->id_cedula_presupuestaria,
+            'numero_certificado'       => $this->numero_certificado,
             'descripcion' => $this->descripcion,
             'fecha_elaboracion' => $this->fecha_elaboracion,
-            'monto_total' => $this->monto_total,
-            'unid_ejecutora' => $this->unid_ejecutora,
-            'des_u_ejecutora' => $this->des_u_ejecutora,
+            'monto_total' => (float) $this->items()->sum('monto'),
             'seccion_memorando' => $this->seccion_memorando,
             'clase_registro' => $this->clase_registro,
             'clase_gasto' => $this->clase_gasto,
             'tipo_doc_respaldo' => $this->tipo_doc_respaldo,
             'clase_doc_respaldo' => $this->clase_doc_respaldo,
             'estado' => $this->estado,
+            'motivo_rechazo' => $this->motivo_rechazo,
             'usuario' => $this->usuario?->name,
-            'id_entidad_requiriente' => $this->id_entidad_requiriente,
+            'id_unidad_requiriente' => $this->id_unidad_requiriente,
             'entidad' => $this->entidadRequiriente?->nombre_entidad,
             'items' => $this->items()->with([
                 'item',

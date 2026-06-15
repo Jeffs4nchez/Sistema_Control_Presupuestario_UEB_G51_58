@@ -24,7 +24,7 @@ export default function EstructuraPresupuestariaUpload() {
   const [file,           setFile]           = useState(null)
   const [loading,        setLoading]        = useState(false)
   const [error,          setError]          = useState(null)
-  const [success,        setSuccess]        = useState(false)
+  const [uploadResult,   setUploadResult]   = useState(null)
   const [summary,        setSummary]        = useState(null)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [showUploadForm, setShowUploadForm] = useState(false)
@@ -57,7 +57,7 @@ export default function EstructuraPresupuestariaUpload() {
   const handleFileChange = (e) => { const f = e.target.files?.[0]; if (f) validateFile(f) }
 
   const uploadFile = async (fileToUpload) => {
-    setLoading(true); setError(null); setSuccess(false)
+    setLoading(true); setError(null); setUploadResult(null)
     try {
       const formData = new FormData()
       formData.append('csv_file', fileToUpload)
@@ -71,8 +71,7 @@ export default function EstructuraPresupuestariaUpload() {
       })
       const data = await res.json()
       if (data.success || data.status === 'success') {
-        setSuccess(true); setFile(null); setShowUploadForm(false)
-        setTimeout(() => setSuccess(false), 5000)
+        setUploadResult(data.data || null); setFile(null); setShowUploadForm(false)
         fetchSummary()
       } else { setError(data.message || 'Error al cargar el archivo') }
     } catch (err) { setError('Error: ' + (err instanceof Error ? err.message : 'Unknown error')) }
@@ -111,11 +110,38 @@ export default function EstructuraPresupuestariaUpload() {
             <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer' }}><X size={14} /></button>
           </motion.div>
         )}
-        {success && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', color: GREEN, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}
+        {uploadResult && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+            style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.28)', borderRadius: '12px', padding: '16px 18px', marginBottom: '16px' }}
           >
-            <CheckCircle size={14} /> Archivo cargado exitosamente
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: GREEN, fontWeight: 700, fontSize: '13px', marginBottom: '12px' }}>
+                <CheckCircle size={15} /> Carga completada
+              </div>
+              <button onClick={() => setUploadResult(null)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: 0 }}><X size={14} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '8px' }}>
+              {[
+                { label: 'Filas en CSV',      value: uploadResult.total_rows,           color: TEXT   },
+                { label: 'Procesadas',         value: uploadResult.processed,            color: ACCENT },
+                { label: 'Nuevas insertadas',  value: uploadResult.inserted,             color: GREEN  },
+                { label: 'Ya existían',        value: uploadResult.existing,             color: '#0891b2' },
+                { label: 'Omitidas',           value: uploadResult.skipped ?? 0,         color: RED    },
+              ].map((s, i) => (
+                <div key={i} style={{ background: '#fff', border: `1px solid ${s.color}30`, borderLeft: `3px solid ${s.color}`, borderRadius: '8px', padding: '10px 12px' }}>
+                  <p style={{ margin: '0 0 2px', fontSize: '11px', color: MUTED, fontWeight: 600 }}>{s.label}</p>
+                  <p style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: s.color }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+            {uploadResult.errors?.length > 0 && (
+              <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(185,28,28,0.06)', borderRadius: '8px' }}>
+                <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: RED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Detalle de errores</p>
+                {uploadResult.errors.map((e, i) => (
+                  <p key={i} style={{ margin: '2px 0', fontSize: '12px', color: '#7f1d1d' }}>Fila {e.row}: {e.error}</p>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

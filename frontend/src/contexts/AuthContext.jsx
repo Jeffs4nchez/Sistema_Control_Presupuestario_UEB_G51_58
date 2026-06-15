@@ -1,6 +1,7 @@
-import React, { createContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useState, useCallback, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Cookies from 'js-cookie';
+import { clearCache } from '../utils/apiCache';
 
 export const AuthContext = createContext();
 
@@ -11,6 +12,33 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+  // Interceptor: cerrar sesión solo cuando el token es inválido (401) o la cuenta está inactiva (403 + mensaje específico)
+  const interceptorRef = useRef(null);
+  useEffect(() => {
+    interceptorRef.current = axios.interceptors.response.use(
+      res => res,
+      err => {
+        const status  = err.response?.status;
+        const message = err.response?.data?.message || '';
+        const cuentaInactiva = status === 403 && (
+          message.toLowerCase().includes('inactiv') ||
+          message.toLowerCase().includes('bloquead') ||
+          message.toLowerCase().includes('cuenta')
+        );
+        if (status === 401 || cuentaInactiva) {
+          setUser(null);
+          setToken(null);
+          setIsAuthenticated(false);
+          Cookies.remove('auth_token');
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(interceptorRef.current);
+    };
+  }, []);
 
   // Verificar si existe token al cargar
   useEffect(() => {
@@ -47,23 +75,20 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async (email, password) => {
     try {
-      setIsLoading(true);
-      console.log('Login attempt with:', { email, api: API_URL });
       const response = await axios.post(`${API_URL}/login`, {
         email,
         password,
       });
 
-      console.log('Login response:', response.data);
       if (response.data.status === 'success') {
         const authToken = response.data.token;
         const userData = response.data.user;
 
+        clearCache();
         setToken(authToken);
         setUser(userData);
         setIsAuthenticated(true);
 
-        // Guardar token en cookie con expiración de 7 días
         Cookies.set('auth_token', authToken, {
           expires: 7,
           secure: false,
@@ -78,22 +103,18 @@ export const AuthProvider = ({ children }) => {
         };
       }
     } catch (error) {
-      console.error('Login error details:', {
-        message: error.message,
-        code: error.code,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
+      const data = error.response?.data;
       return {
         success: false,
-        error: error.response?.data?.message || error.message || 'Error al iniciar sesión',
+        error: data?.message || error.message || 'Error al iniciar sesión',
+        intentos_restantes: data?.intentos_restantes ?? null,
+        bloqueado: data?.bloqueado ?? false,
       };
-    } finally {
-      setIsLoading(false);
     }
   }, [API_URL]);
 
   const logout = useCallback(() => {
+    clearCache();
     setUser(null);
     setToken(null);
     setIsAuthenticated(false);

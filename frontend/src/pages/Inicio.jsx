@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useFiscalYear } from '../contexts/FiscalYearContext';
+import { can } from '../utils/permissions';
+import { cachedFetch } from '../utils/apiCache';
 import { motion } from 'framer-motion';
 import Cookies from 'js-cookie';
 import {
@@ -40,6 +43,13 @@ function useAnimatedCounter(target, duration = 1400, delay = 0) {
   return value;
 }
 
+/* ── Formateador inteligente: M para millones, K para miles ───── */
+const fmtChartVal = (v) => {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}K`;
+  return `$${v}`;
+};
+
 /* ── Custom tooltip ───────────────────────────────────────────── */
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -58,7 +68,7 @@ const CustomTooltip = ({ active, payload, label }) => {
       </p>
       {payload.map((p, i) => (
         <p key={i} style={{ margin: '2px 0', fontSize: '13px', fontWeight: 700, color: p.color }}>
-          {p.name}: ${(p.value / 1000).toFixed(1)}K
+          {p.name}: {fmtChartVal(p.value)}
         </p>
       ))}
     </div>
@@ -116,10 +126,115 @@ function FlipCard({ front, back }) {
   );
 }
 
+/* ── Skeleton card glassmorphism ─────────────────────────────── */
+function SkeletonKpiCards({ isMobile, cols = 4 }) {
+  const cardStyle = {
+    background: 'rgba(255,255,255,0.85)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255,255,255,0.95)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 24px rgba(26,58,92,0.10)',
+    padding: '20px',
+    height: isMobile ? '120px' : '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${cols}, 1fr)`, gap: '14px', height: isMobile ? 'auto' : '130px' }}>
+      {Array.from({ length: cols }).map((_, i) => (
+        <div key={i} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="skeleton" style={{ width: '70px', height: '10px' }} />
+            <div className="skeleton" style={{ width: '32px', height: '32px', borderRadius: '9px' }} />
+          </div>
+          <div>
+            <div className="skeleton" style={{ width: '110px', height: '26px', marginBottom: '8px' }} />
+            <div className="skeleton" style={{ width: '55px', height: '10px' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkeletonChart({ isMobile }) {
+  const panelStyle = {
+    background: 'rgba(255,255,255,0.85)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255,255,255,0.95)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 24px rgba(26,58,92,0.10)',
+    padding: '20px',
+  };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: '16px' }}>
+      {/* Gráfico */}
+      <div style={panelStyle}>
+        <div className="skeleton" style={{ width: '180px', height: '14px', marginBottom: '8px' }} />
+        <div className="skeleton" style={{ width: '140px', height: '11px', marginBottom: '20px' }} />
+        {/* Barras simuladas */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', height: '180px', padding: '0 4px' }}>
+          {[110, 110, 110, 110, 140].map((h, i) => (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'stretch', height: '100%', justifyContent: 'flex-end' }}>
+              <div className="skeleton" style={{ height: `${Math.round(h * 0.5)}px`, borderRadius: '6px 6px 0 0' }} />
+              <div className="skeleton" style={{ height: `${Math.round(h * 0.18)}px`, borderRadius: '6px 6px 0 0', opacity: 0.5 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Barras de progreso */}
+      <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column' }}>
+        <div className="skeleton" style={{ width: '160px', height: '14px', marginBottom: '8px' }} />
+        <div className="skeleton" style={{ width: '120px', height: '11px', marginBottom: '24px' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', flex: 1, justifyContent: 'center' }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '7px' }}>
+                <div className="skeleton" style={{ width: '110px', height: '11px' }} />
+                <div className="skeleton" style={{ width: '28px', height: '11px' }} />
+              </div>
+              <div className="skeleton" style={{ width: '100%', height: '7px', borderRadius: '999px' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonQuickActions({ isMobile }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <div key={i} style={{
+          display: 'flex', alignItems: 'center', gap: '14px',
+          padding: '16px 18px',
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          borderRadius: '14px',
+          boxShadow: '0 4px 20px rgba(26,58,92,0.08)',
+        }}>
+          <div className="skeleton" style={{ width: '42px', height: '42px', borderRadius: '12px', flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div className="skeleton" style={{ width: '70%', height: '13px', marginBottom: '8px' }} />
+            <div className="skeleton" style={{ width: '50%', height: '10px' }} />
+          </div>
+          <div className="skeleton" style={{ width: '15px', height: '15px', borderRadius: '4px', flexShrink: 0 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Main component ──────────────────────────────────────────── */
 export const Inicio = () => {
   const navigate = useNavigate();
   const { user }  = useAuth();
+  const { selectedCedula } = useFiscalYear();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [loading,  setLoading]  = useState(true);
 
@@ -139,22 +254,32 @@ export const Inicio = () => {
     return () => window.removeEventListener('resize', h);
   }, []);
 
-  useEffect(() => { fetchDashboard(); }, []);
+  useEffect(() => { fetchDashboard(); }, [selectedCedula]);
 
   const fetchDashboard = async () => {
     try {
       const token   = Cookies.get('auth_token');
       const authHdr = { Authorization: `Bearer ${token}` };
+      const cedulaQ = selectedCedula
+        ? `?id_cedula_presupuestaria=${selectedCedula.id_cedula_presupuestaria}`
+        : '';
 
-      const [presRes, usersRes, certRes, liqRes] = await Promise.all([
-        fetch(`${API}/presupuesto-disponible`),
-        fetch(`${API}/usuarios`,                          { headers: authHdr }),
-        fetch(`${API}/reportes/certificaciones/json`,     { headers: authHdr }),
-        fetch(`${API}/reportes/liquidaciones/json`,       { headers: authHdr }),
-      ]);
+      const puedeVerUsuarios = can.verUsuarios(user);
+
+      const fetches = [
+        cachedFetch(`${API}/presupuesto-disponible${cedulaQ}`, { headers: authHdr }),
+        puedeVerUsuarios ? cachedFetch(`${API}/usuarios`, { headers: authHdr }) : Promise.resolve(null),
+        cachedFetch(`${API}/reportes/certificaciones/json`, { headers: authHdr }),
+        cachedFetch(`${API}/reportes/liquidaciones/json`,   { headers: authHdr }),
+      ];
+
+      const [presRes, usersRes, certRes, liqRes] = await Promise.all(fetches);
 
       const [presJson, usersJson, certJson, liqJson] = await Promise.all([
-        presRes.json(), usersRes.json(), certRes.json(), liqRes.json(),
+        presRes.json(),
+        usersRes ? usersRes.json() : Promise.resolve(null),
+        certRes.json(),
+        liqRes.json(),
       ]);
 
       /* ── Presupuesto totales ── */
@@ -167,30 +292,36 @@ export const Inicio = () => {
 
         /* ── Certificaciones ── */
         let certAprobadas = 0;
-        if (certJson.success && certJson.data?.length) {
-          const total    = certJson.data.length;
-          const activas  = certJson.data.filter(c => c.estado !== 'ANULADA' && c.estado !== 'ERRADO').length;
-          certAprobadas  = total > 0 ? Math.round((activas / total) * 100) : 0;
+        const currentYear  = new Date().getFullYear();
+        const currentMonth = new Date().getMonth();
+        const byMonth = {};
 
-          /* Agrupar por mes (año actual) */
-          const currentYear = new Date().getFullYear();
-          const byMonth = {};
+        if (certJson.success && certJson.data?.length) {
+          const total   = certJson.data.length;
+          const activas = certJson.data.filter(c => c.estado !== 'ANULADA' && c.estado !== 'ERRADO').length;
+          certAprobadas = total > 0 ? Math.round((activas / total) * 100) : 0;
+
           certJson.data.forEach(c => {
-            const d = new Date(c.fecha_elaboracion);
+            if (['ANULADA', 'RECHAZADO', 'ERRADO'].includes(c.estado)) return;
+            const d = new Date(c.fecha_elaboracion + 'T12:00:00-05:00');
             if (d.getFullYear() !== currentYear) return;
             const m = d.getMonth();
             byMonth[m] = (byMonth[m] || 0) + parseFloat(c.monto_total || 0);
           });
-
-          const monthlyBudget = t.total_codificado > 0 ? t.total_codificado / 12 : 0;
-          const currentMonth  = new Date().getMonth();
-          const months = Array.from({ length: currentMonth + 1 }, (_, i) => ({
-            name:        MONTH_NAMES[i],
-            Codificado:  Math.round(monthlyBudget),
-            Certificado: Math.round(byMonth[i] || 0),
-          }));
-          setChartData(months);
         }
+
+        /* Certificado acumulado mes a mes — el último mes forzado a total_certificado */
+        let cumCert = 0;
+        const months = Array.from({ length: currentMonth + 1 }, (_, i) => {
+          cumCert += byMonth[i] || 0;
+          const isLast = i === currentMonth;
+          return {
+            name:        MONTH_NAMES[i],
+            Codificado:  Math.round(t.total_codificado),
+            Certificado: isLast ? Math.round(t.total_certificado) : Math.round(cumCert),
+          };
+        });
+        setChartData(months);
 
         /* ── Liquidaciones ── */
         let liqActivas = 0;
@@ -239,13 +370,11 @@ export const Inicio = () => {
   };
 
   const quickActions = [
-    { title: 'Estructura Presupuestaria', desc: 'Importar datos desde CSV',        icon: Upload,       color: '#2e6ca4', path: '/dashboard/estructura-presupuestaria' },
-    { title: 'Ver Datos',                 desc: 'Visualizar información cargada',  icon: Database,     color: '#0891b2', path: '/dashboard/estructura-presupuestaria-data' },
-    { title: 'Cédula Presupuestaria',     desc: 'Gestionar asignaciones',          icon: FileText,     color: '#d97706', path: '/dashboard/cedula-presupuestaria' },
-    { title: 'Certificaciones',           desc: 'Crear y gestionar certificados',  icon: CheckCircle2, color: '#059669', path: '/dashboard/certificacion' },
-    { title: 'Gestionar Usuarios',        desc: 'Administrar acceso de usuarios',  icon: Users,        color: '#8b0f0f', path: '/dashboard/usuarios' },
-    { title: 'Reportes',                  desc: 'Exportar datos y documentos',     icon: BarChart3,    color: '#7c3aed', path: '/dashboard/reportes' },
-  ];
+    { title: 'Cédula Presupuestaria',     desc: 'Importar y gestionar presupuesto', icon: FileText,     color: '#d97706', path: '/dashboard/cedula-presupuestaria',  check: can.verCedula },
+    { title: 'Certificaciones',           desc: 'Crear y gestionar certificados',   icon: CheckCircle2, color: '#059669', path: '/dashboard/certificacion',          check: can.verCertificacion },
+    { title: 'Gestionar Usuarios',        desc: 'Administrar acceso de usuarios',   icon: Users,        color: '#8b0f0f', path: '/dashboard/usuarios',               check: can.verUsuarios },
+    { title: 'Reportes',                  desc: 'Exportar datos y documentos',      icon: BarChart3,    color: '#7c3aed', path: '/dashboard/reportes',               check: can.verReportes },
+  ].filter(a => a.check(user));
 
   return (
     <div style={{ background: 'var(--page-bg)', minHeight: '100%', padding: P, fontFamily: 'var(--font-primary)' }}>
@@ -277,7 +406,7 @@ export const Inicio = () => {
           </motion.p>
           <motion.h1 initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.22 }}
             style={{ margin: '0 0 8px', fontSize: isMobile ? '22px' : '30px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-            Bienvenido, {user?.nombres?.split(' ')[0] || 'Usuario'}
+            Bienvenido, {[user?.nombres?.split(' ')[0], user?.apellidos?.split(' ')[0]].filter(Boolean).join(' ') || 'Usuario'}
           </motion.h1>
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.32 }}
             style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
@@ -317,7 +446,8 @@ export const Inicio = () => {
           Resumen Presupuestario
         </motion.p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '14px', height: isMobile ? 'auto' : '130px' }}>
+        {loading ? <SkeletonKpiCards isMobile={isMobile} cols={can.verUsuarios(user) ? 4 : 3} /> : (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${can.verUsuarios(user) ? 4 : 3}, 1fr)`, gap: '14px', height: isMobile ? 'auto' : '130px' }}>
           {[
             {
               label: 'Presupuesto Total', value: animTotal,    prefix: '$', icon: DollarSign, color: '#2e6ca4',
@@ -334,11 +464,11 @@ export const Inicio = () => {
               frontSub: `${pctDisp}% restante`,
               backLabel: 'Saldo libre', backVal: `${pctDisp}% disponible`, backSub: 'Partidas con saldo para certificar',
             },
-            {
+            ...(can.verUsuarios(user) ? [{
               label: 'Usuarios Activos',  value: animUsuarios, prefix: '', icon: Shield,       color: '#7c3aed',
               frontSub: 'En el sistema',
               backLabel: 'Accesos', backVal: 'Activos hoy', backSub: 'Usuarios con sesión habilitada',
-            },
+            }] : []),
           ].map((card, i) => {
             const CardIcon = card.icon;
             return (
@@ -361,7 +491,7 @@ export const Inicio = () => {
                       </div>
                       <div style={{ marginTop: 'auto' }}>
                         <p style={{ margin: '0 0 2px', fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--text-heading)', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
-                          {loading ? '—' : `${card.prefix}${card.value.toLocaleString('es-EC')}`}
+                          {`${card.prefix}${card.value.toLocaleString('es-EC')}`}
                         </p>
                         <p style={{ margin: 0, fontSize: '11px', color: card.color, fontWeight: 600 }}>
                           {card.frontSub}
@@ -387,9 +517,13 @@ export const Inicio = () => {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* ── Chart + Progress ──────────────────────────────── */}
+      {loading ? (
+        <div style={{ marginBottom: '24px' }}><SkeletonChart isMobile={isMobile} /></div>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: '16px', marginBottom: '24px' }}>
 
         {/* Bar Chart */}
@@ -406,7 +540,7 @@ export const Inicio = () => {
               Evolución Presupuestaria
             </h3>
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
-              Codificado vs. Certificado ({new Date().getFullYear()})
+              Certificado mensual ({new Date().getFullYear()})
             </p>
           </div>
 
@@ -419,21 +553,18 @@ export const Inicio = () => {
               <BarChart data={chartData} barGap={4} barCategoryGap="25%">
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(26,58,92,0.07)" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v/1000).toFixed(0)}K`} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} tickFormatter={fmtChartVal} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(26,58,92,0.05)' }} />
-                <Bar dataKey="Codificado"  fill="#2e6ca4" radius={[6,6,0,0]} isAnimationActive animationDuration={1200} />
                 <Bar dataKey="Certificado" fill="#54b3e0" radius={[6,6,0,0]} isAnimationActive animationDuration={1400} animationBegin={200} />
               </BarChart>
             </ResponsiveContainer>
           )}
 
           <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-            {[{ color: '#2e6ca4', label: 'Codificado' }, { color: '#54b3e0', label: 'Certificado' }].map((l, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: l.color }} />
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{l.label}</span>
-              </div>
-            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#54b3e0' }} />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Certificado</span>
+            </div>
           </div>
         </motion.div>
 
@@ -467,13 +598,13 @@ export const Inicio = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '7px' }}>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>{bar.label}</span>
                   <span style={{ fontSize: '12px', fontWeight: 800, color: bar.color }}>
-                    {loading ? '—' : `${bar.pct}%`}
+                    {`${bar.pct}%`}
                   </span>
                 </div>
                 <div style={{ width: '100%', height: '7px', background: 'rgba(26,58,92,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: loading ? '0%' : `${bar.pct}%` }}
+                    animate={{ width: `${bar.pct}%` }}
                     transition={{ duration: 1.2, delay: 0.7 + i * 0.15, ease: 'easeOut' }}
                     style={{ height: '100%', background: bar.gradient, borderRadius: '999px', boxShadow: `0 2px 8px ${bar.color}55` }}
                   />
@@ -483,6 +614,7 @@ export const Inicio = () => {
           </div>
         </motion.div>
       </div>
+      )}
 
       {/* ── Quick Actions ─────────────────────────────────── */}
       <div>
@@ -491,6 +623,7 @@ export const Inicio = () => {
           Acciones Rápidas
         </motion.p>
 
+        {loading ? <SkeletonQuickActions isMobile={isMobile} /> : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
           {quickActions.map((action, i) => {
             const Icon = action.icon;
@@ -533,6 +666,7 @@ export const Inicio = () => {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Footer */}

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import Cookies from "js-cookie"
 import { motion } from 'framer-motion'
 import { Search, ChevronLeft, ChevronRight, Filter } from "lucide-react"
+import { cachedFetch } from '../utils/apiCache'
 
 const CARD   = 'rgba(255,255,255,0.90)'
 const BORDER = 'rgba(46,108,164,0.14)'
@@ -48,7 +49,7 @@ export default function CedulaPresupuestariaData({ embedded = false }) {
     setLoading(true)
     try {
       const token = Cookies.get("auth_token")
-      const res = await fetch(
+      const res = await cachedFetch(
         `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/cedula-presupuestaria/data?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
@@ -75,7 +76,7 @@ export default function CedulaPresupuestariaData({ embedded = false }) {
   const P = isMobile ? '20px' : '28px'
 
   return (
-    <div style={{ minHeight: embedded ? 0 : '100%', background: embedded ? 'none' : 'var(--page-bg)', padding: embedded ? 0 : P, fontFamily: 'var(--font-primary)', flex: embedded ? 1 : undefined }}>
+    <div style={{ minHeight: embedded ? 0 : '100%', background: embedded ? 'none' : 'var(--page-bg)', padding: embedded ? 0 : P, fontFamily: 'var(--font-primary)', flex: embedded ? 1 : undefined, overflowX: 'hidden' }}>
 
       {!embedded && <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: '20px' }}>
         <h1 style={{ margin: '0 0 4px', fontSize: isMobile ? '18px' : '20px', fontWeight: 800, color: TEXT, letterSpacing: '-0.02em' }}>
@@ -150,15 +151,24 @@ export default function CedulaPresupuestariaData({ embedded = false }) {
         ) : data.length === 0 ? (
           <div style={{ padding: '48px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>No hay datos disponibles</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="ueb-table" style={{ minWidth: '1100px', fontSize: '12px' }}>
+          <div style={{ width: '100%', overflowX: 'hidden' }}>
+            <table className="ueb-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
                 <tr>
-                  {['Programa', 'Actividad', 'Fuente', 'Item', 'Descripción del Item', 'Asignado', 'Modificado', 'Codificado', 'Certificado', 'Saldo Disponible'].map((h, i) => (
-                    <th key={i} style={{ textAlign: i >= 5 ? 'right' : 'left', whiteSpace: 'nowrap',
-                      color: i === 5 ? GREEN : i === 6 ? GOLD : i === 7 ? ACCENT : i === 8 ? TEAL : i === 9 ? RED : undefined }}
-                    >
-                      {h}
+                  {[
+                    { label: 'Prog.',       align: 'left',  color: undefined },
+                    { label: 'Act.',        align: 'left',  color: undefined },
+                    { label: 'Fte.',        align: 'left',  color: undefined },
+                    { label: 'Ítem',        align: 'left',  color: undefined },
+                    { label: 'Descripción', align: 'left',  color: undefined },
+                    { label: 'Asignado',    align: 'right', color: GREEN  },
+                    { label: 'Modificado',  align: 'right', color: GOLD   },
+                    { label: 'Codificado',  align: 'right', color: ACCENT },
+                    { label: 'Certificado', align: 'right', color: TEAL   },
+                    { label: 'Saldo',       align: 'right', color: RED    },
+                  ].map((h, i) => (
+                    <th key={i} style={{ textAlign: h.align, whiteSpace: 'nowrap', overflow: 'hidden', color: h.color, padding: '9px 6px', fontSize: '11px' }}>
+                      {h.label}
                     </th>
                   ))}
                 </tr>
@@ -166,18 +176,18 @@ export default function CedulaPresupuestariaData({ embedded = false }) {
               <tbody>
                 {data.map((item, idx) => (
                   <motion.tr key={item.id_item || idx} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(idx * 0.008, 0.3) }}>
-                    <td style={{ fontFamily: 'monospace', color: MUTED, fontSize: '11px' }}>{item.cod_programa || '—'}</td>
-                    <td style={{ fontFamily: 'monospace', color: MUTED, fontSize: '11px' }}>{(item.cod_actividad || '—').slice(-3)}</td>
-                    <td style={{ fontFamily: 'monospace', color: MUTED, fontSize: '11px' }}>{item.cod_fuente || '—'}</td>
-                    <td style={{ fontFamily: 'monospace', color: ACCENT, fontWeight: 700, fontSize: '11px' }}>{item.cod_item}</td>
-                    <td style={{ maxWidth: '200px', whiteSpace: 'normal' }}>{item.nombre_item}</td>
-                    <td style={{ textAlign: 'right', color: GREEN, fontWeight: 600 }}>{fmtCurrency(item.asignado)}</td>
-                    <td style={{ textAlign: 'right', color: GOLD, fontWeight: 600 }}>{fmtCurrency(item.modificado)}</td>
-                    <td style={{ textAlign: 'right', color: ACCENT, fontWeight: 600 }}>
+                    <td style={{ padding: '9px 5px', fontFamily: 'monospace', color: MUTED, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.cod_programa || '—'}</td>
+                    <td style={{ padding: '9px 5px', fontFamily: 'monospace', color: MUTED, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(item.cod_actividad || '—').slice(-3)}</td>
+                    <td style={{ padding: '9px 5px', fontFamily: 'monospace', color: MUTED, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.cod_fuente || '—'}</td>
+                    <td style={{ padding: '9px 6px', fontFamily: 'monospace', color: ACCENT, fontWeight: 700, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.cod_item}</td>
+                    <td style={{ padding: '9px 6px', fontSize: '13px', color: TEXT, fontWeight: 500, lineHeight: 1.4, maxWidth: '200px' }}>{item.nombre_item}</td>
+                    <td style={{ padding: '9px 6px', textAlign: 'right', color: GREEN,  fontWeight: 600, fontSize: '12px', overflow: 'hidden', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(item.asignado)}</td>
+                    <td style={{ padding: '9px 6px', textAlign: 'right', color: GOLD,   fontWeight: 600, fontSize: '12px', overflow: 'hidden', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(item.modificado)}</td>
+                    <td style={{ padding: '9px 6px', textAlign: 'right', color: ACCENT, fontWeight: 600, fontSize: '12px', overflow: 'hidden', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                       {fmtCurrency((parseFloat(item.asignado) || 0) + (parseFloat(item.modificado) || 0))}
                     </td>
-                    <td style={{ textAlign: 'right', color: TEAL, fontWeight: 600 }}>{fmtCurrency(item.certificado)}</td>
-                    <td style={{ textAlign: 'right', color: RED, fontWeight: 700 }}>{calcSaldo(item)}</td>
+                    <td style={{ padding: '9px 6px', textAlign: 'right', color: TEAL,   fontWeight: 600, fontSize: '12px', overflow: 'hidden', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(item.certificado)}</td>
+                    <td style={{ padding: '9px 6px', textAlign: 'right', color: RED,    fontWeight: 700, fontSize: '12px', overflow: 'hidden', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{calcSaldo(item)}</td>
                   </motion.tr>
                 ))}
               </tbody>

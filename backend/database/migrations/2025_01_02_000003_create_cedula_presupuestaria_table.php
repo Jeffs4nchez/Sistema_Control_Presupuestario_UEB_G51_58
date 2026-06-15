@@ -18,20 +18,14 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Insertar 4 cédulas: año actual + 3 años anteriores
+        // Insertar año anterior y año actual (orden ascendente → IDs 1 y 2)
+        // El año siguiente se crea automáticamente el 1 de enero (cedula:next-year)
         $añoActual = now()->year;
-        $cedulasData = [];
 
-        for ($i = 0; $i < 4; $i++) {
-            $año = $añoActual - $i;
-            $cedulasData[] = [
-                'anio' => $año,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
-
-        DB::table('cedula_presupuestaria')->insert($cedulasData);
+        DB::table('cedula_presupuestaria')->insert([
+            ['anio' => $añoActual - 1, 'created_at' => now(), 'updated_at' => now()],
+            ['anio' => $añoActual,     'created_at' => now(), 'updated_at' => now()],
+        ]);
     }
 
     /**

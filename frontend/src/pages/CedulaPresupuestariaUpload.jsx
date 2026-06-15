@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import Cookies from "js-cookie"
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, FileText, CheckCircle, AlertCircle, FileSpreadsheet, List, DollarSign, X } from "lucide-react"
+import { Upload, FileText, CheckCircle, AlertCircle, FileSpreadsheet, List, DollarSign, X, AlertTriangle, ArrowRight } from "lucide-react"
+import { useFiscalYear } from "../contexts/FiscalYearContext"
 
 const CARD   = 'rgba(255,255,255,0.90)'
 const BORDER = 'rgba(46,108,164,0.14)'
@@ -14,27 +16,40 @@ const TEXT   = '#1a3a5c'
 const MUTED  = '#5a7a9f'
 
 export default function CedulaPresupuestariaUpload() {
-  const [file,           setFile]           = useState(null)
-  const [loading,        setLoading]        = useState(false)
-  const [error,          setError]          = useState(null)
-  const [success,        setSuccess]        = useState(false)
-  const [summary,        setSummary]        = useState(null)
-  const [showUploadForm, setShowUploadForm] = useState(false)
-  const [isMobile,       setIsMobile]       = useState(window.innerWidth < 768)
+  const navigate = useNavigate()
+  const { selectedCedula } = useFiscalYear()
+  const [file,              setFile]              = useState(null)
+  const [loading,           setLoading]           = useState(false)
+  const [error,             setError]             = useState(null)
+  const [uploadResult,      setUploadResult]      = useState(null)
+  const [summary,           setSummary]           = useState(null)
+  const [showUploadForm,    setShowUploadForm]    = useState(false)
+  const [estructuraItems,   setEstructuraItems]   = useState(null)  // null = cargando, 0 = sin estructura
+  const [isMobile,          setIsMobile]          = useState(window.innerWidth < 768)
+
+  const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
   useEffect(() => {
+    fetchEstructuraCheck()
     fetchSummary()
     const h = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', h)
     return () => window.removeEventListener('resize', h)
   }, [])
 
+  const fetchEstructuraCheck = async () => {
+    try {
+      const token = Cookies.get("auth_token")
+      const res  = await fetch(`${API}/estructura-presupuestaria/summary`, { headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      setEstructuraItems((data.success || data.status === 'success') ? (data.data?.items_count ?? 0) : 0)
+    } catch { setEstructuraItems(0) }
+  }
+
   const fetchSummary = async () => {
     try {
       const token = Cookies.get("auth_token")
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/cedula-presupuestaria/summary`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res  = await fetch(`${API}/cedula-presupuestaria/summary`, { headers: { Authorization: `Bearer ${token}` } })
       const data = await res.json()
       if (data.success) setSummary(data.data)
     } catch (err) { console.error(err) }
@@ -48,18 +63,21 @@ export default function CedulaPresupuestariaUpload() {
   const handleFileChange = (e) => { const f = e.target.files?.[0]; if (f) validateFile(f) }
 
   const uploadFile = async (fileToUpload) => {
-    setLoading(true); setError(null); setSuccess(false)
+    setLoading(true); setError(null)
     try {
       const formData = new FormData()
       formData.append('csv_file', fileToUpload)
+      if (selectedCedula?.id_cedula_presupuestaria) {
+        formData.append('id_cedula_presupuestaria', selectedCedula.id_cedula_presupuestaria)
+      }
       const token = Cookies.get("auth_token")
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/cedula-presupuestaria/upload`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData,
       })
       const data = await res.json()
       if (data.success) {
-        setSuccess(true); setFile(null); setShowUploadForm(false)
-        setTimeout(() => setSuccess(false), 5000); fetchSummary()
+        setUploadResult(data.data || null); setFile(null); setShowUploadForm(false)
+        fetchSummary()
       } else { setError(data.message || 'Error al cargar el archivo') }
     } catch (err) { setError('Error: ' + (err instanceof Error ? err.message : 'Unknown error')) }
     finally { setLoading(false) }
@@ -93,21 +111,78 @@ export default function CedulaPresupuestariaUpload() {
             <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer' }}><X size={14} /></button>
           </motion.div>
         )}
-        {success && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', color: GREEN, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}
+        {uploadResult && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+            style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.28)', borderRadius: '12px', padding: '16px 18px', marginBottom: '16px' }}
           >
-            <CheckCircle size={14} /> Archivo cargado exitosamente
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: GREEN, fontWeight: 700, fontSize: '13px', marginBottom: '12px' }}>
+                <CheckCircle size={15} /> Carga completada
+              </div>
+              <button onClick={() => setUploadResult(null)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: 0 }}><X size={14} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '8px' }}>
+              {[
+                { label: 'Filas en CSV',      value: uploadResult.total_rows,           color: TEXT   },
+                { label: 'Procesadas',         value: uploadResult.processed_count,      color: ACCENT },
+                { label: 'Nuevas insertadas',  value: uploadResult.insert_count,         color: GREEN  },
+                { label: 'Actualizadas',       value: uploadResult.update_count,         color: '#0891b2' },
+                { label: 'Omitidas',           value: uploadResult.skipped ?? 0,         color: RED    },
+              ].map((s, i) => (
+                <div key={i} style={{ background: '#fff', border: `1px solid ${s.color}30`, borderLeft: `3px solid ${s.color}`, borderRadius: '8px', padding: '10px 12px' }}>
+                  <p style={{ margin: '0 0 2px', fontSize: '11px', color: MUTED, fontWeight: 600 }}>{s.label}</p>
+                  <p style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: s.color }}>{s.value ?? 0}</p>
+                </div>
+              ))}
+            </div>
+            {uploadResult.errors?.length > 0 && (
+              <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(185,28,28,0.06)', borderRadius: '8px' }}>
+                <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: RED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Detalle de errores</p>
+                {uploadResult.errors.map((e, i) => (
+                  <p key={i} style={{ margin: '2px 0', fontSize: '12px', color: '#7f1d1d' }}>Fila {e.row}: {e.error}</p>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '16px', padding: '28px', marginBottom: '20px', backdropFilter: 'blur(12px)', boxShadow: '0 4px 24px rgba(26,58,92,0.10)' }}
+        style={{ background: CARD, border: `1px solid ${estructuraItems === 0 ? 'rgba(217,119,6,0.35)' : BORDER}`, borderRadius: '16px', padding: '28px', marginBottom: '20px', backdropFilter: 'blur(12px)', boxShadow: '0 4px 24px rgba(26,58,92,0.10)' }}
       >
         <AnimatePresence mode="wait">
-          {!showUploadForm ? (
+          {/* Bloqueo: sin estructura cargada */}
+          {estructuraItems === 0 ? (
+            <motion.div key="blocked" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '12px 0' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(217,119,6,0.10)', border: '1px solid rgba(217,119,6,0.30)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+                <AlertTriangle size={28} color={GOLD} />
+              </div>
+              <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 800, color: GOLD }}>Requisito previo incompleto</h2>
+              <p style={{ margin: '0 0 6px', fontSize: '13px', color: TEXT, fontWeight: 600 }}>
+                No existe Estructura Presupuestaria cargada.
+              </p>
+              <p style={{ margin: '0 0 24px', fontSize: '13px', color: MUTED, maxWidth: '400px', margin: '0 auto 24px' }}>
+                Debe importar primero el CSV de Estructura Presupuestaria para que el sistema pueda validar actividades, fuentes, ubicaciones e ítems de la cédula.
+              </p>
+              <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={() => navigate('/dashboard/estructura-presupuestaria')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 24px', background: 'linear-gradient(135deg, #92400e, #d97706)', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-primary)', boxShadow: '0 4px 16px rgba(217,119,6,0.30)' }}
+              >
+                Ir a Estructura Presupuestaria <ArrowRight size={15} />
+              </motion.button>
+            </motion.div>
+          ) : estructuraItems === null ? (
+            /* Cargando verificación */
+            <motion.div key="checking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '24px 0', color: MUTED, fontSize: '13px' }}>
+              <div style={{ width: '28px', height: '28px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: ACCENT, borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+              Verificando estructura presupuestaria...
+            </motion.div>
+          ) : !showUploadForm ? (
             <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ textAlign: 'center', padding: '12px 0' }}>
+              {/* Badge de estructura OK */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.25)', borderRadius: '20px', padding: '4px 12px', marginBottom: '18px', fontSize: '12px', color: GREEN, fontWeight: 600 }}>
+                <CheckCircle size={12} /> Estructura cargada — {estructuraItems.toLocaleString()} ítems disponibles
+              </div>
               <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(46,108,164,0.10)', border: '1px solid rgba(46,108,164,0.20)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
                 <Upload size={28} color={ACCENT} />
               </div>

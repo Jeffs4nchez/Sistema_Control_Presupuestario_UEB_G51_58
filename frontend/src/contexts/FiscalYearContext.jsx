@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import Cookies from 'js-cookie'
+import { AuthContext } from './AuthContext'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 const STORAGE_KEY = 'fiscal_year_cedula_id'
@@ -12,23 +13,23 @@ export function FiscalYearProvider({ children }) {
   const [selectedCedula, setSelectedCedula] = useState(null)
   const [loading,        setLoading]        = useState(true)
 
+  const { isAuthenticated } = useContext(AuthContext)
+
   const fetchCedulas = useCallback(async () => {
     try {
       const token = Cookies.get('auth_token')
-      if (!token) return
       const res  = await fetch(`${API}/certificacion/cedulas-presupuestarias`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       const json = await res.json()
       if (json.success && json.data?.length) {
         const sorted = [...json.data].sort((a, b) => b.anio - a.anio)
         setCedulas(sorted)
 
-        // Restaurar selección previa o usar año actual
-        const savedId   = localStorage.getItem(STORAGE_KEY)
-        const savedCed  = savedId ? sorted.find(c => String(c.id_cedula_presupuestaria) === savedId) : null
+        const savedId    = localStorage.getItem(STORAGE_KEY)
+        const savedCed   = savedId ? sorted.find(c => String(c.id_cedula_presupuestaria) === savedId) : null
         const currentCed = sorted.find(c => c.anio === currentYear)
-        setSelectedCedula(savedCed || currentCed || sorted[0])
+        setSelectedCedula(currentCed || savedCed || sorted[0])
       }
     } catch (e) {
       console.error('FiscalYearContext:', e)
@@ -37,7 +38,15 @@ export function FiscalYearProvider({ children }) {
     }
   }, [currentYear])
 
-  useEffect(() => { fetchCedulas() }, [fetchCedulas])
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchCedulas()
+    } else {
+      setCedulas([])
+      setSelectedCedula(null)
+      setLoading(false)
+    }
+  }, [isAuthenticated, fetchCedulas])
 
   const changeCedula = (cedula) => {
     setSelectedCedula(cedula)

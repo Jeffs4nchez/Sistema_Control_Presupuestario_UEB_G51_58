@@ -6,17 +6,13 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('fuente_items', function (Blueprint $table) {
             $table->foreignId('id_fuente')->constrained('fuente_financiamiento', 'id_fuente');
             $table->foreignId('id_item')->constrained('items', 'id_item');
-            $table->foreignId('id_cedula_presupuestaria')->nullable()->constrained('cedula_presupuestaria', 'id_cedula_presupuestaria');
-            $table->primary(['id_fuente', 'id_item']);
-            $table->unique(['id_fuente', 'id_item', 'id_cedula_presupuestaria']);
+            $table->foreignId('id_cedula_presupuestaria')->constrained('cedula_presupuestaria', 'id_cedula_presupuestaria');
+            $table->primary(['id_fuente', 'id_item', 'id_cedula_presupuestaria']);
             $table->decimal('asignado', 15, 2)->nullable();
             $table->decimal('modificado', 15, 2)->nullable();
             $table->decimal('comprometido', 15, 2)->nullable();
@@ -29,9 +25,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('fuente_items');

@@ -18,7 +18,9 @@ use App\Models\EntidadRequiriente;
 use App\Models\CedulaPresupuestaria;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use App\Models\Auditoria;
+use App\Models\User;
 use Carbon\Carbon;
 
 class CertificacionController extends Controller
@@ -40,6 +42,16 @@ class CertificacionController extends Controller
             $offset = ($page - 1) * $limit;
 
             $query = Certificacion::with('usuario', 'entidadRequiriente');
+
+            // RBAC: Analista solo ve sus propios certificados
+            $u = Auth::user();
+            if (!$u) {
+                return response()->json(['success' => false, 'message' => 'No autenticado'], 401);
+            }
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+            if (!in_array($u->cargo, $rolesDirector)) {
+                $query->where('id_usuario', $u->id_usuario);
+            }
 
             // Filtro por año fiscal (cédula)
             if ($idCedula) {
@@ -81,9 +93,18 @@ class CertificacionController extends Controller
                 $liquidado = (float) DB::table('liquidaciones')
                     ->join('certificacion_items', 'liquidaciones.id_certificacion_item', '=', 'certificacion_items.id_certificacion_item')
                     ->where('certificacion_items.id_certificacion', $cert->id_certificacion)
+                    ->where('liquidaciones.estado', '!=', 'ANULADA')
                     ->sum('liquidaciones.cantidad_liquidacion');
 
-                $pendiente = max(0, $montoTotal - $liquidado);
+                // Pendiente por item: evita que liquidaciones de un item "cubran" otro
+                $pendiente = 0;
+                foreach ($cert->items()->get() as $certItem) {
+                    $liqItem = (float) DB::table('liquidaciones')
+                        ->where('id_certificacion_item', $certItem->id_certificacion_item)
+                        ->where('estado', '!=', 'ANULADA')
+                        ->sum('cantidad_liquidacion');
+                    $pendiente += max(0, (float) $certItem->monto - $liqItem);
+                }
 
                 // Convertir fecha a datetime si es string
                 $fecha = $cert->fecha_elaboracion;
@@ -95,12 +116,14 @@ class CertificacionController extends Controller
                     'id_certificacion' => $cert->id_certificacion,
                     'numero_certificado' => $cert->numero_certificado,
                     'institucion' => $cert->entidadRequiriente?->nombre_entidad ?? '-',
-                    'usuario' => $cert->usuario?->nombres ?? '-',
+                    'id_usuario' => $cert->id_usuario,
+                    'usuario' => $cert->usuario ? trim($cert->usuario->nombres . ' ' . $cert->usuario->apellidos) : '-',
                     'fecha_elaboracion' => $fecha->format('d/m/Y'),
                     'monto_total' => number_format($montoTotal, 2, ',', '.'),
                     'liquidado' => number_format($liquidado, 2, ',', '.'),
                     'pendiente' => number_format($pendiente, 2, ',', '.'),
-                    'estado' => $cert->estado
+                    'estado' => $cert->estado,
+                    'motivo_rechazo' => $cert->motivo_rechazo,
                 ];
             });
 
@@ -128,16 +151,21 @@ class CertificacionController extends Controller
      */
     public function store(Request $request)
     {
+        $rolesOperativos = ['Director(a) financiero', 'Analista de presupuesto 1', 'Analista de presupuesto 3', 'Administrador del sistema'];
+        $cargo = Auth::user()?->cargo;
+        if (!in_array($cargo, $rolesOperativos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para crear certificaciones'], 403);
+        }
+
+
         $request->validate([
-            'descripcion' => 'required|string|max:255',
-            'unid_ejecutora' => 'required|string|max:100',
-            'des_u_ejecutora' => 'required|string|max:100',
+            'descripcion' => 'required|string|max:1000',
             'clase_registro' => 'required|string|max:100',
             'clase_gasto' => 'required|string|max:100',
             'tipo_doc_respaldo' => 'required|string|max:100',
             'clase_doc_respaldo' => 'required|string|max:100',
             'seccion_memorando' => 'nullable|string|max:100',
-            'id_entidad_requiriente' => 'required|exists:entidad_requiriente,id_entidad_requiriente',
+            'id_unidad_requiriente' => 'required|exists:unidad_requiriente,id_unidad_requiriente',
             'id_cedula_presupuestaria' => 'required|exists:cedula_presupuestaria,id_cedula_presupuestaria',
             'items' => 'required|array|min:1',
             'items.*.id_programa' => 'required|exists:programa,id_programa',
@@ -152,28 +180,35 @@ class CertificacionController extends Controller
             'items.*.monto' => 'required|numeric|min:0.01',
         ]);
 
+        if (!DB::table('fuente_items')
+                ->where('id_cedula_presupuestaria', $request->id_cedula_presupuestaria)
+                ->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No existe estructura presupuestaria para el año seleccionado. Cargue los ítems del año antes de certificar.',
+            ], 422);
+        }
+
         try {
             DB::beginTransaction();
 
             // Generar número de certificado automático
             $ultimoCertificado = Certificacion::orderBy('id_certificacion', 'DESC')->first();
             $numero = ($ultimoCertificado?->id_certificacion ?? 0) + 1;
-            $numeroCertificado = 'CERT-' . str_pad($numero, 3, '0', STR_PAD_LEFT);
+            $numeroCertificado = str_pad($numero, 3, '0', STR_PAD_LEFT);
 
             $certificado = Certificacion::create([
                 'numero_certificado' => $numeroCertificado,
                 'descripcion' => $request->descripcion,
                 'fecha_elaboracion' => now()->toDateString(),
-                'unid_ejecutora' => $request->unid_ejecutora,
-                'des_u_ejecutora' => $request->des_u_ejecutora,
                 'clase_registro' => $request->clase_registro,
                 'clase_gasto' => $request->clase_gasto,
                 'tipo_doc_respaldo' => $request->tipo_doc_respaldo,
                 'clase_doc_respaldo' => $request->clase_doc_respaldo,
                 'seccion_memorando' => $request->seccion_memorando,
-                'estado' => 'APROBADO',
+                'estado' => 'REGISTRADO',
                 'id_usuario' => auth()->id(),
-                'id_entidad_requiriente' => $request->id_entidad_requiriente,
+                'id_unidad_requiriente' => $request->id_unidad_requiriente,
                 'id_cedula_presupuestaria' => $request->id_cedula_presupuestaria
             ]);
 
@@ -194,6 +229,8 @@ class CertificacionController extends Controller
                 ]);
             }
 
+            $certificado->actualizarMontoTotal();
+
             DB::commit();
 
             try {
@@ -212,6 +249,11 @@ class CertificacionController extends Controller
                 \Log::error('Auditoria::store error: ' . $ae->getMessage());
             }
 
+            // Solo Analista 1 notifica a Analista 3 al crear
+            if ($cargo === 'Analista de presupuesto 1') {
+                $this->notificarAnalista3($certificado, Auth::user(), 'creacion');
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Certificado creado exitosamente con ' . count($request->items) . ' item(s)',
@@ -225,6 +267,198 @@ class CertificacionController extends Controller
                 'message' => 'Error: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function notificarAnalista3($certificado, $analista, string $tipo = 'creacion'): void
+    {
+        try {
+            $destinatarios = User::where('cargo', 'Analista de presupuesto 3')
+                ->where(DB::raw('LOWER(estado)'), 'activo')
+                ->get();
+
+            $nombreAnalista = $analista
+                ? trim($analista->nombres . ' ' . $analista->apellidos)
+                : 'Analista';
+
+            $fecha = now()->format('d/m/Y H:i');
+
+            foreach ($destinatarios as $destinatario) {
+                if ($tipo === 'creacion') {
+                    $asunto = "Certificación N.° {$certificado->numero_certificado} — Pendiente de revisión";
+                    $cuerpo = "Estimado/a {$destinatario->nombres},\n\n"
+                        . "Por medio del presente, se le comunica que el/la Analista de Presupuesto {$nombreAnalista} "
+                        . "ha registrado la Certificación Presupuestaria N.° {$certificado->numero_certificado}, "
+                        . "la cual se encuentra pendiente de su revisión y aprobación.\n\n"
+                        . "Detalle de la certificación:\n"
+                        . "  - Número:      {$certificado->numero_certificado}\n"
+                        . "  - Descripción: {$certificado->descripcion}\n"
+                        . "  - Fecha:       {$certificado->fecha_elaboracion}\n\n"
+                        . "Se le solicita cordialmente ingresar al Sistema de Control Presupuestario "
+                        . "para proceder con la revisión correspondiente.\n\n"
+                        . "Atentamente,\n"
+                        . "Sistema de Control Presupuestario\n"
+                        . "Universidad Estatal de Bolívar";
+                } else {
+                    $asunto = "Certificación N.° {$certificado->numero_certificado} — Reenviada para revisión";
+                    $cuerpo = "Estimado/a {$destinatario->nombres},\n\n"
+                        . "Se le informa que el/la Analista de Presupuesto {$nombreAnalista} ha realizado "
+                        . "las correcciones solicitadas y ha reenviado la Certificación Presupuestaria "
+                        . "N.° {$certificado->numero_certificado} para su nueva revisión y aprobación.\n\n"
+                        . "Fecha de reenvío: {$fecha}\n\n"
+                        . "Se le solicita cordialmente ingresar al Sistema de Control Presupuestario "
+                        . "para proceder con la revisión correspondiente.\n\n"
+                        . "Atentamente,\n"
+                        . "Sistema de Control Presupuestario\n"
+                        . "Universidad Estatal de Bolívar";
+                }
+
+                $this->enviarCorreo($destinatario->correo_institucional, $destinatario->nombres, $asunto, $cuerpo);
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('notificarAnalista3 error: ' . $e->getMessage());
+        }
+    }
+
+    private function notificarAprobacion($cert, $aprobador): void
+    {
+        $nombreAprobador = trim($aprobador->nombres . ' ' . $aprobador->apellidos);
+        $cargoAprobador  = $aprobador->cargo;
+        $esAnalista3     = $cargoAprobador === 'Analista de presupuesto 3';
+        $fecha           = now()->format('d/m/Y H:i');
+
+        // 1. Notificar al creador que su certificación fue aprobada
+        $creador = User::find($cert->id_usuario);
+        if ($creador) {
+            if (!$creador->correo_institucional) {
+                \Log::warning("El usuario creador (id={$creador->id_usuario}) no tiene correo institucional registrado.");
+            } else {
+                $asunto = "Certificación N.° {$cert->numero_certificado} — Aprobada";
+                $cuerpo = "Estimado/a {$creador->nombres},\n\n"
+                    . "Me permito comunicarle que la Certificación Presupuestaria N.° {$cert->numero_certificado} "
+                    . "ha sido APROBADA por {$nombreAprobador}, {$cargoAprobador}.\n\n"
+                    . "Fecha de aprobación: {$fecha}\n\n"
+                    . "Puede ingresar al Sistema de Control Presupuestario para consultar el detalle completo.\n\n"
+                    . "Atentamente,\n"
+                    . "Sistema de Control Presupuestario\n"
+                    . "Universidad Estatal de Bolívar";
+                $this->enviarCorreo($creador->correo_institucional, $creador->nombres, $asunto, $cuerpo);
+            }
+        } else {
+            \Log::warning("No se encontró el creador de la certificación id={$cert->id_certificacion}");
+        }
+
+        // 2. Si aprobó el Analista 3, notificar también al Director Financiero
+        if ($esAnalista3) {
+            $directores = User::where('cargo', 'Director(a) financiero')
+                ->where(DB::raw('LOWER(estado)'), 'activo')
+                ->get();
+
+            foreach ($directores as $director) {
+                if (!$director->correo_institucional) continue;
+                $asunto = "Certificación N.° {$cert->numero_certificado} — Aprobada por Analista de Presupuesto 3";
+                $cuerpo = "Estimado/a {$director->nombres},\n\n"
+                    . "Se le informa que la Certificación Presupuestaria N.° {$cert->numero_certificado} "
+                    . "ha sido aprobada por el/la Analista de Presupuesto 3: {$nombreAprobador}.\n\n"
+                    . "Fecha de aprobación: {$fecha}\n\n"
+                    . "Puede ingresar al Sistema de Control Presupuestario para consultar el detalle.\n\n"
+                    . "Atentamente,\n"
+                    . "Sistema de Control Presupuestario\n"
+                    . "Universidad Estatal de Bolívar";
+                $this->enviarCorreo($director->correo_institucional, $director->nombres, $asunto, $cuerpo);
+            }
+        }
+    }
+
+    private function enviarCorreo(string $correo, string $nombre, string $asunto, string $cuerpo): void
+    {
+        try {
+            $html = $this->plantillaHtml($asunto, $cuerpo);
+            Mail::html($html, function ($msg) use ($correo, $nombre, $asunto) {
+                $msg->to($correo, $nombre)->subject($asunto);
+            });
+        } catch (\Throwable $e) {
+            \Log::warning("No se pudo enviar email a {$correo}: " . $e->getMessage());
+        }
+    }
+
+    private function plantillaHtml(string $asunto, string $cuerpo): string
+    {
+        $lineas = array_map(
+            fn($l) => trim($l) === '' ? '<br>' : '<p style="margin:0 0 10px 0;">'.htmlspecialchars($l).'</p>',
+            explode("\n", $cuerpo)
+        );
+        $contenido = implode("\n", $lineas);
+        $anio = now()->year;
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1.0">
+          <title>{$asunto}</title>
+        </head>
+        <body style="margin:0;padding:0;background-color:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f4f8;padding:32px 0;">
+            <tr>
+              <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+                  <!-- ENCABEZADO -->
+                  <tr>
+                    <td style="background:linear-gradient(135deg,#0d2f5e 0%,#1a5276 100%);border-radius:12px 12px 0 0;padding:32px 40px;text-align:center;">
+                      <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:3px;color:#aed6f1;text-transform:uppercase;font-weight:600;">Universidad Estatal de Bolívar</p>
+                      <h1 style="margin:0 0 4px 0;font-size:20px;color:#ffffff;font-weight:700;letter-spacing:0.5px;">Sistema de Control Presupuestario</h1>
+                      <p style="margin:0;font-size:12px;color:#85c1e9;">Dirección Financiera</p>
+                    </td>
+                  </tr>
+
+                  <!-- BANDA DE COLOR -->
+                  <tr>
+                    <td style="background:#2e86c1;height:4px;"></td>
+                  </tr>
+
+                  <!-- ASUNTO -->
+                  <tr>
+                    <td style="background:#ffffff;padding:28px 40px 16px 40px;border-left:1px solid #dce6f0;border-right:1px solid #dce6f0;">
+                      <h2 style="margin:0;font-size:16px;color:#0d2f5e;font-weight:700;border-bottom:2px solid #2e86c1;padding-bottom:12px;">{$asunto}</h2>
+                    </td>
+                  </tr>
+
+                  <!-- CUERPO -->
+                  <tr>
+                    <td style="background:#ffffff;padding:16px 40px 32px 40px;border-left:1px solid #dce6f0;border-right:1px solid #dce6f0;">
+                      <div style="font-size:14px;color:#2c3e50;line-height:1.8;">
+                        {$contenido}
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- AVISO -->
+                  <tr>
+                    <td style="background:#eaf4fb;padding:16px 40px;border:1px solid #aed6f1;border-top:none;">
+                      <p style="margin:0;font-size:12px;color:#1a5276;">
+                        &#9432;&nbsp; Este es un mensaje automático generado por el Sistema de Control Presupuestario de la UEB.
+                        Por favor, no responda a este correo.
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- PIE -->
+                  <tr>
+                    <td style="background:#0d2f5e;border-radius:0 0 12px 12px;padding:20px 40px;text-align:center;">
+                      <p style="margin:0 0 4px 0;font-size:12px;color:#aed6f1;font-weight:600;">Universidad Estatal de Bolívar — Dirección Financiera</p>
+                      <p style="margin:0;font-size:11px;color:#5d8aa8;">Guaranda, Ecuador &nbsp;|&nbsp; &copy; {$anio}</p>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+        HTML;
     }
 
     /**
@@ -268,6 +502,15 @@ class CertificacionController extends Controller
 
         try {
             $certificado = Certificacion::findOrFail($idCertificacion);
+
+            $u = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+            if (!in_array($u?->cargo, $rolesDirector) && (int) $certificado->id_usuario !== (int) $u?->id_usuario) {
+                return response()->json(['success' => false, 'message' => 'No puede agregar ítems a una certificación de otro usuario'], 403);
+            }
+            if ($certificado->estado !== 'REGISTRADO') {
+                return response()->json(['success' => false, 'message' => 'Solo se pueden agregar ítems a certificaciones en estado REGISTRADO'], 422);
+            }
 
             // Verificar que el item no esté duplicado en este certificado
             $existente = CertificacionItem::where('id_certificacion', $idCertificacion)
@@ -345,6 +588,13 @@ class CertificacionController extends Controller
 
         try {
             $certificado = Certificacion::findOrFail($idCertificacion);
+
+            $u = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+            if (!in_array($u?->cargo, $rolesDirector) && (int) $certificado->id_usuario !== (int) $u?->id_usuario) {
+                return response()->json(['success' => false, 'message' => 'No puede editar ítems de una certificación ajena'], 403);
+            }
+
             $montoAnterior = (float) $certificado->items()->sum('monto');
 
             $item = CertificacionItem::where('id_certificacion', $idCertificacion)
@@ -393,6 +643,13 @@ class CertificacionController extends Controller
     {
         try {
             $certificado = Certificacion::findOrFail($idCertificacion);
+
+            $u = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+            if (!in_array($u?->cargo, $rolesDirector) && (int) $certificado->id_usuario !== (int) $u?->id_usuario) {
+                return response()->json(['success' => false, 'message' => 'No puede eliminar ítems de una certificación ajena'], 403);
+            }
+
             $montoAnterior = (float) $certificado->items()->sum('monto');
 
             $item = CertificacionItem::where('id_certificacion', $idCertificacion)
@@ -442,26 +699,39 @@ class CertificacionController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            'descripcion' => 'nullable|string|max:255',
-            'unid_ejecutora' => 'nullable|string|max:100',
-            'des_u_ejecutora' => 'nullable|string|max:100',
+            'descripcion' => 'nullable|string|max:1000',
             'clase_registro' => 'nullable|string|max:100',
             'clase_gasto' => 'nullable|string|max:100',
             'tipo_doc_respaldo' => 'nullable|string|max:100',
             'clase_doc_respaldo' => 'nullable|string|max:100',
-            'estado' => 'nullable|in:PENDIENTE,APROBADO,RECHAZADO'
+            'estado' => 'nullable|in:REGISTRADO,APROBADO,RECHAZADO,LIQUIDADO,ERRADO'
         ]);
+
+        $u             = Auth::user();
+        $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+        $esDirector    = in_array($u?->cargo, $rolesDirector);
 
         try {
             $certificado = Certificacion::findOrFail($id);
+
+            if (!$esDirector) {
+                if ((int) $certificado->id_usuario !== (int) $u?->id_usuario) {
+                    return response()->json(['success' => false, 'message' => 'No puede editar una certificación de otro usuario'], 403);
+                }
+                if ($certificado->estado === 'ERRADO') {
+                    return response()->json(['success' => false, 'message' => 'No se puede editar una certificación marcada como errada'], 403);
+                }
+                // No puede cambiar el estado vía edición (eso se hace por aprobar/rechazar/reenviar)
+                if ($request->has('estado')) {
+                    return response()->json(['success' => false, 'message' => 'No tiene permiso para cambiar el estado directamente'], 403);
+                }
+            }
 
             $estadoAnterior = $certificado->estado;
             $montoAnterior  = $certificado->monto_total;
 
             $fields = $request->only([
                 'descripcion',
-                'unid_ejecutora',
-                'des_u_ejecutora',
                 'clase_registro',
                 'clase_gasto',
                 'tipo_doc_respaldo',
@@ -538,8 +808,21 @@ class CertificacionController extends Controller
      */
     public function destroy($id)
     {
+        $u             = Auth::user();
+        $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+        $esDirector    = in_array($u?->cargo, $rolesDirector);
+
         try {
             $certificado = Certificacion::findOrFail($id);
+
+            if (!$esDirector) {
+                if ((int) $certificado->id_usuario !== (int) $u?->id_usuario) {
+                    return response()->json(['success' => false, 'message' => 'No puede eliminar una certificación de otro usuario'], 403);
+                }
+                if (!in_array($certificado->estado, ['REGISTRADO', 'RECHAZADO'])) {
+                    return response()->json(['success' => false, 'message' => 'Solo puede eliminar certificaciones en estado REGISTRADO o RECHAZADO'], 403);
+                }
+            }
 
             try {
                 $u = Auth::user();
@@ -576,208 +859,275 @@ class CertificacionController extends Controller
 
     /**
      * Obtener datos para cascadas: programas
+     * ?cedula=id  → solo programas que tienen ítems en esa cédula
      */
-    public function getProgramas()
+    public function getProgramas(Request $request)
     {
         try {
-            $programas = Programa::select('id_programa', 'cod_programa', 'nombre_programa')
-                                 ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $programas
-            ], 200);
+            $q = Programa::select('id_programa', 'cod_programa', 'nombre_programa');
+
+            if ($cedula) {
+                $q->whereExists(fn($sub) =>
+                    $sub->selectRaw('1')->from('fuente_items as fi')
+                        ->join('items as i',        'fi.id_item',        '=', 'i.id_item')
+                        ->join('actividad as a',    'i.id_actividad',    '=', 'a.id_actividad')
+                        ->join('proyecto as pr',    'a.id_proyecto',     '=', 'pr.id_proyecto')
+                        ->join('subprograma as sp', 'pr.id_subprograma', '=', 'sp.id_subprograma')
+                        ->whereColumn('sp.id_programa', 'programa.id_programa')
+                        ->where('fi.id_cedula_presupuestaria', $cedula)
+                );
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Obtener subprogramas por programa
      */
-    public function getSubprogramas($idPrograma)
+    public function getSubprogramas(Request $request, $idPrograma)
     {
         try {
-            $subprogramas = Subprograma::where('id_programa', $idPrograma)
-                                       ->select('id_subprograma', 'cod_subprograma', 'nombre_subprograma')
-                                       ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $subprogramas
-            ], 200);
+            $q = Subprograma::where('id_programa', $idPrograma)
+                            ->select('id_subprograma', 'cod_subprograma', 'nombre_subprograma');
+
+            if ($cedula) {
+                $q->whereExists(fn($sub) =>
+                    $sub->selectRaw('1')->from('fuente_items as fi')
+                        ->join('items as i',     'fi.id_item',     '=', 'i.id_item')
+                        ->join('actividad as a', 'i.id_actividad', '=', 'a.id_actividad')
+                        ->join('proyecto as pr', 'a.id_proyecto',  '=', 'pr.id_proyecto')
+                        ->whereColumn('pr.id_subprograma', 'subprograma.id_subprograma')
+                        ->where('fi.id_cedula_presupuestaria', $cedula)
+                );
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Obtener proyectos por subprograma
      */
-    public function getProyectos($idSubprograma)
+    public function getProyectos(Request $request, $idSubprograma)
     {
         try {
-            $proyectos = Proyecto::where('id_subprograma', $idSubprograma)
-                                  ->select('id_proyecto', 'cod_proyecto', 'nombre_proyecto')
-                                  ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $proyectos
-            ], 200);
+            $q = Proyecto::where('id_subprograma', $idSubprograma)
+                         ->select('id_proyecto', 'cod_proyecto', 'nombre_proyecto');
+
+            if ($cedula) {
+                $q->whereExists(fn($sub) =>
+                    $sub->selectRaw('1')->from('fuente_items as fi')
+                        ->join('items as i',     'fi.id_item',     '=', 'i.id_item')
+                        ->join('actividad as a', 'i.id_actividad', '=', 'a.id_actividad')
+                        ->whereColumn('a.id_proyecto', 'proyecto.id_proyecto')
+                        ->where('fi.id_cedula_presupuestaria', $cedula)
+                );
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Obtener actividades por proyecto
      */
-    public function getActividades($idProyecto)
+    public function getActividades(Request $request, $idProyecto)
     {
         try {
-            $actividades = Actividad::where('id_proyecto', $idProyecto)
-                                     ->select('id_actividad', 'cod_actividad', 'nombre_actividad')
-                                     ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $actividades
-            ], 200);
+            $q = Actividad::where('id_proyecto', $idProyecto)
+                          ->select('id_actividad', 'cod_actividad', 'nombre_actividad');
+
+            if ($cedula) {
+                $q->whereExists(fn($sub) =>
+                    $sub->selectRaw('1')->from('fuente_items as fi')
+                        ->join('items as i', 'fi.id_item', '=', 'i.id_item')
+                        ->whereColumn('i.id_actividad', 'actividad.id_actividad')
+                        ->where('fi.id_cedula_presupuestaria', $cedula)
+                );
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
-     * Obtener fuentes financiamiento
+     * Ítems filtrados por actividad + fuente — jerarquía G7→G5
+     * Sin duplicados (dentro de una fuente cada cod_item es único).
+     * Incluye G6/G8/G9 para auto-completar el formulario.
+     */
+    public function getItemsByActividadFuente(Request $request, $idActividad)
+    {
+        try {
+            $idFuente = $request->query('fuente');
+            $cedula   = $request->query('cedula');
+
+            $q = DB::table('items as i')
+                ->join('fuente_items as fi',           'fi.id_item',       '=', 'i.id_item')
+                ->join('ubicacion as ub',              'ub.id_ubicacion',  '=', 'i.id_ubicacion')
+                ->join('organismos as org',            'org.id_organismo', '=', 'i.id_organismo')
+                ->join('naturaleza_prestacion as np',  'np.id_naturaleza', '=', 'i.id_naturaleza')
+                ->where('i.id_actividad', $idActividad)
+                ->select(
+                    'i.id_item', 'i.cod_item', 'i.nombre_item',
+                    'i.id_ubicacion',  'ub.cod_ubicacion',  'ub.nombre_ubicacion',
+                    'i.id_organismo',  'org.cod_organismo', 'org.nombre_organismo',
+                    'i.id_naturaleza', 'np.cod_naturaleza', 'np.nombre_naturaleza'
+                )
+                ->distinct();
+
+            if ($idFuente) {
+                $q->where('fi.id_fuente', $idFuente);
+            }
+            if ($cedula) {
+                $q->where('fi.id_cedula_presupuestaria', $cedula);
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Obtener fuentes financiamiento (todas)
      */
     public function getFuentes()
     {
         try {
-            $fuentes = FuenteFinanciamiento::select('id_fuente', 'cod_fuente', 'nombre_fuente')
-                                           ->get();
-
-            return response()->json([
-                'success' => true,
-                'data' => $fuentes
-            ], 200);
+            $fuentes = FuenteFinanciamiento::select('id_fuente', 'cod_fuente', 'nombre_fuente')->get();
+            return response()->json(['success' => true, 'data' => $fuentes]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Obtener fuentes por actividad
      */
-    public function getFuentesByActividad($idActividad)
+    public function getFuentesByActividad(Request $request, $idActividad)
     {
         try {
-            $fuentes = DB::table('fuente_financiamiento')
-                ->join('actividad_fuente', 'fuente_financiamiento.id_fuente', '=', 'actividad_fuente.id_fuente')
-                ->where('actividad_fuente.id_actividad', $idActividad)
-                ->select('fuente_financiamiento.id_fuente', 'fuente_financiamiento.cod_fuente', 'fuente_financiamiento.nombre_fuente')
-                ->distinct()
-                ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $fuentes
-            ], 200);
+            $q = DB::table('fuente_financiamiento as f')
+                ->join('fuente_items as fi', 'f.id_fuente', '=', 'fi.id_fuente')
+                ->join('items as i',         'fi.id_item',  '=', 'i.id_item')
+                ->where('i.id_actividad', $idActividad)
+                ->select('f.id_fuente', 'f.cod_fuente', 'f.nombre_fuente')
+                ->distinct();
+
+            if ($cedula) {
+                $q->where('fi.id_cedula_presupuestaria', $cedula);
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Obtener ubicaciones por actividad
      */
-    public function getUbicaciones($idActividad)
+    public function getUbicaciones(Request $request, $idActividad)
     {
         try {
-            $ubicaciones = Ubicacion::whereHas('items', function ($query) use ($idActividad) {
-                $query->where('id_actividad', $idActividad);
-            })->select('id_ubicacion', 'cod_ubicacion', 'nombre_ubicacion')
-              ->distinct()
-              ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $ubicaciones
-            ], 200);
+            $q = DB::table('ubicacion as u')
+                ->join('items as i',       'i.id_ubicacion', '=', 'u.id_ubicacion')
+                ->join('fuente_items as fi','fi.id_item',     '=', 'i.id_item')
+                ->where('i.id_actividad', $idActividad)
+                ->select('u.id_ubicacion', 'u.cod_ubicacion', 'u.nombre_ubicacion')
+                ->distinct();
+
+            if ($cedula) {
+                $q->where('fi.id_cedula_presupuestaria', $cedula);
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Obtener items por actividad y ubicación
      */
-    public function getItems($idActividad, $idUbicacion)
+    public function getItems(Request $request, $idActividad, $idUbicacion)
     {
         try {
-            $items = Item::where('id_actividad', $idActividad)
-                         ->where('id_ubicacion', $idUbicacion)
-                         ->select('id_item', 'cod_item', 'nombre_item')
-                         ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $items
-            ], 200);
+            $q = DB::table('items as i')
+                ->join('fuente_items as fi', 'fi.id_item', '=', 'i.id_item')
+                ->join('organismos as org', 'org.id_organismo', '=', 'i.id_organismo')
+                ->join('naturaleza_prestacion as np', 'np.id_naturaleza', '=', 'i.id_naturaleza')
+                ->where('i.id_actividad', $idActividad)
+                ->where('i.id_ubicacion', $idUbicacion)
+                ->select(
+                    'i.id_item', 'i.cod_item', 'i.nombre_item',
+                    'i.id_organismo', 'org.cod_organismo', 'org.nombre_organismo',
+                    'i.id_naturaleza', 'np.cod_naturaleza', 'np.nombre_naturaleza'
+                )
+                ->distinct();
+
+            if ($cedula) {
+                $q->where('fi.id_cedula_presupuestaria', $cedula);
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
-     * Obtener items por actividad, ubicación y fuente
+     * Obtener items por actividad, ubicación y fuente — incluye organismo y N Prestación
      */
-    public function getItemsByFuente($idActividad, $idUbicacion, $idFuente)
+    public function getItemsByFuente(Request $request, $idActividad, $idUbicacion, $idFuente)
     {
         try {
-            $items = DB::table('items')
-                ->join('fuente_items', 'items.id_item', '=', 'fuente_items.id_item')
-                ->where('items.id_actividad', $idActividad)
-                ->where('items.id_ubicacion', $idUbicacion)
-                ->where('fuente_items.id_fuente', $idFuente)
-                ->select('items.id_item', 'items.cod_item', 'items.nombre_item')
-                ->distinct()
-                ->get();
+            $cedula = $request->query('cedula');
 
-            return response()->json([
-                'success' => true,
-                'data' => $items
-            ], 200);
+            $q = DB::table('items as i')
+                ->join('fuente_items as fi', 'fi.id_item', '=', 'i.id_item')
+                ->join('organismos as org', 'org.id_organismo', '=', 'i.id_organismo')
+                ->join('naturaleza_prestacion as np', 'np.id_naturaleza', '=', 'i.id_naturaleza')
+                ->where('i.id_actividad', $idActividad)
+                ->where('i.id_ubicacion', $idUbicacion)
+                ->where('fi.id_fuente', $idFuente)
+                ->select(
+                    'i.id_item', 'i.cod_item', 'i.nombre_item',
+                    'i.id_organismo', 'org.cod_organismo', 'org.nombre_organismo',
+                    'i.id_naturaleza', 'np.cod_naturaleza', 'np.nombre_naturaleza'
+                )
+                ->distinct();
+
+            if ($cedula) {
+                $q->where('fi.id_cedula_presupuestaria', $cedula);
+            }
+
+            return response()->json(['success' => true, 'data' => $q->get()]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
@@ -803,13 +1153,13 @@ class CertificacionController extends Controller
     }
 
     /**
-     * Obtener entidades requirientes
+     * Obtener unidades requirientes
      */
     public function getEntidadesRequirientes()
     {
         try {
             $entidades = EntidadRequiriente::select(
-                'id_entidad_requiriente',
+                'id_unidad_requiriente',
                 'nombre_entidad',
                 'responsable_entidad',
                 'correo_institucional'
@@ -847,7 +1197,7 @@ class CertificacionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Entidad requiriente creada exitosamente',
+                'message' => 'Unidad requiriente creada exitosamente',
                 'data' => $entidad
             ], 201);
         } catch (\Exception $e) {
@@ -871,7 +1221,10 @@ class CertificacionController extends Controller
                                                return [
                                                    'id_cedula_presupuestaria' => $cedula->id_cedula_presupuestaria,
                                                    'anio' => $cedula->anio,
-                                                   'display' => 'Año ' . $cedula->anio
+                                                   'display' => 'Año ' . $cedula->anio,
+                                                   'tiene_estructura' => DB::table('fuente_items')
+                                                       ->where('id_cedula_presupuestaria', $cedula->id_cedula_presupuestaria)
+                                                       ->exists(),
                                                ];
                                            });
 
@@ -962,15 +1315,22 @@ class CertificacionController extends Controller
      * Compara el codificado (asignado + modificado) con lo ya certificado
      * Los certificados se crean YA APROBADOS, no hay pendientes
      */
-    public function verificarMontoDisponible($idItem, $idFuente)
+    public function verificarMontoDisponible(Request $request, $idItem, $idFuente)
     {
         try {
+            $cedula = $request->query('cedula');
+
             // Obtener el registro de fuente_items
-            $fuenteItem = DB::table('fuente_items')
+            $q = DB::table('fuente_items')
                 ->where('id_item', $idItem)
                 ->where('id_fuente', $idFuente)
-                ->select('asignado', 'modificado')
-                ->first();
+                ->select('asignado', 'modificado');
+
+            if ($cedula) {
+                $q->where('id_cedula_presupuestaria', $cedula);
+            }
+
+            $fuenteItem = $q->first();
 
             if (!$fuenteItem) {
                 return response()->json([
@@ -979,34 +1339,34 @@ class CertificacionController extends Controller
                 ], 404);
             }
 
-            $asignado = floatval($fuenteItem->asignado ?? 0);
-            $modificado = floatval($fuenteItem->modificado ?? 0);
+            $asignado   = round(floatval($fuenteItem->asignado   ?? 0), 2);
+            $modificado = round(floatval($fuenteItem->modificado ?? 0), 2);
 
             // Certificado bruto: suma de todos los montos aprobados/liquidados
-            $certificado_bruto = (float) DB::table('certificacion_items')
+            $certificado_bruto = round((float) DB::table('certificacion_items')
                 ->join('certificacion', 'certificacion_items.id_certificacion', '=', 'certificacion.id_certificacion')
                 ->where('certificacion_items.id_item', $idItem)
                 ->where('certificacion_items.id_fuente', $idFuente)
                 ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
-                ->sum('certificacion_items.monto');
+                ->sum('certificacion_items.monto'), 2);
 
             // Lo ya liquidado (pagado) de esas certificaciones
-            $ya_liquidado = (float) DB::table('liquidaciones')
+            $ya_liquidado = round((float) DB::table('liquidaciones')
                 ->join('certificacion_items', 'liquidaciones.id_certificacion_item', '=', 'certificacion_items.id_certificacion_item')
                 ->join('certificacion', 'certificacion_items.id_certificacion', '=', 'certificacion.id_certificacion')
                 ->where('certificacion_items.id_item', $idItem)
                 ->where('certificacion_items.id_fuente', $idFuente)
                 ->whereIn('certificacion.estado', ['APROBADO', 'LIQUIDADO'])
-                ->sum('liquidaciones.cantidad_liquidacion');
+                ->sum('liquidaciones.cantidad_liquidacion'), 2);
 
             // Certificado neto = pendiente de pago (igual que cédula)
-            $certificado_neto = max(0, $certificado_bruto - $ya_liquidado);
+            $certificado_neto = round(max(0, $certificado_bruto - $ya_liquidado), 2);
 
             // Codificado = Asignado + Modificado
-            $codificado = $asignado + $modificado;
+            $codificado = round($asignado + $modificado, 2);
 
             // Disponible = Codificado - Certificado neto (igual que Saldo Disponible en cédula)
-            $disponible_final = $codificado - $certificado_neto;
+            $disponible_final = round($codificado - $certificado_neto, 2);
 
             return response()->json([
                 'success' => true,
@@ -1027,6 +1387,190 @@ class CertificacionController extends Controller
                 'success' => false,
                 'message' => 'Error: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    // ── Solo Director: aprobar certificación REGISTRADO → APROBADO ─────
+    public function aprobar(int $id)
+    {
+        $rolesPermitidos = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+        if (!in_array(Auth::user()?->cargo, $rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'Solo el Director Financiero puede aprobar certificaciones'], 403);
+        }
+
+        try {
+            $cert = DB::table('certificacion')->where('id_certificacion', $id)->first();
+            if (!$cert) {
+                return response()->json(['success' => false, 'message' => 'Certificación no encontrada'], 404);
+            }
+            if ($cert->estado !== 'REGISTRADO') {
+                return response()->json(['success' => false, 'message' => 'Solo se pueden aprobar certificaciones en estado REGISTRADO'], 422);
+            }
+
+            DB::table('certificacion')
+                ->where('id_certificacion', $id)
+                ->update(['estado' => 'APROBADO', 'updated_at' => now()]);
+
+            $this->notificarAprobacion($cert, Auth::user());
+
+            return response()->json(['success' => true, 'message' => 'Certificación aprobada correctamente']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ── Solo Director: rechazar certificación REGISTRADO → RECHAZADO ───
+    public function rechazar(Request $request, int $id)
+    {
+        $rolesPermitidos = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+        if (!in_array(Auth::user()?->cargo, $rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'Solo el Director Financiero puede rechazar certificaciones'], 403);
+        }
+
+        try {
+            $request->validate(['motivo' => 'required|string|max:500']);
+
+            $cert = DB::table('certificacion')->where('id_certificacion', $id)->first();
+            if (!$cert) {
+                return response()->json(['success' => false, 'message' => 'Certificación no encontrada'], 404);
+            }
+            if ($cert->estado !== 'REGISTRADO') {
+                return response()->json(['success' => false, 'message' => 'Solo se pueden rechazar certificaciones en estado REGISTRADO'], 422);
+            }
+
+            $motivo = $request->input('motivo');
+
+            DB::table('certificacion')
+                ->where('id_certificacion', $id)
+                ->update([
+                    'estado'         => 'RECHAZADO',
+                    'motivo_rechazo' => $motivo,
+                    'updated_at'     => now(),
+                ]);
+
+            // Notificar al analista que creó el certificado
+            $analista = User::find($cert->id_usuario);
+            if ($analista && $analista->correo_institucional) {
+                $revisor = Auth::user();
+                $nombreRevisor = $revisor ? trim($revisor->nombres . ' ' . $revisor->apellidos) : 'el responsable';
+                $cargoRevisor  = $revisor?->cargo ?? 'Responsable';
+                $cuerpo = "Estimado/a {$analista->nombres},\n\n"
+                    . "Me permito comunicarle que la Certificación Presupuestaria N.° {$cert->numero_certificado} "
+                    . "ha sido RECHAZADA por {$nombreRevisor}, {$cargoRevisor}.\n\n"
+                    . "Motivo del rechazo:\n"
+                    . "  {$motivo}\n\n"
+                    . "Se le solicita ingresar al Sistema de Control Presupuestario, revisar la certificación, "
+                    . "realizar las correcciones pertinentes y reenviarla para su nueva revisión.\n\n"
+                    . "Atentamente,\n"
+                    . "Sistema de Control Presupuestario\n"
+                    . "Universidad Estatal de Bolívar";
+                $this->enviarCorreo(
+                    $analista->correo_institucional,
+                    $analista->nombres,
+                    "Certificación N.° {$cert->numero_certificado} — Rechazada",
+                    $cuerpo
+                );
+            }
+
+            return response()->json(['success' => true, 'message' => 'Certificación rechazada']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ── Analista: reenviar certificación RECHAZADO → REGISTRADO ──────────────
+    public function reenviar(int $id)
+    {
+        try {
+            $cert = DB::table('certificacion')->where('id_certificacion', $id)->first();
+            if (!$cert) {
+                return response()->json(['success' => false, 'message' => 'Certificación no encontrada'], 404);
+            }
+            if ($cert->estado !== 'RECHAZADO') {
+                return response()->json(['success' => false, 'message' => 'Solo se pueden reenviar certificaciones en estado RECHAZADO'], 422);
+            }
+
+            $u = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+            if (!in_array($u?->cargo, $rolesDirector) && (int) $cert->id_usuario !== (int) $u?->id_usuario) {
+                return response()->json(['success' => false, 'message' => 'Solo puede reenviar sus propias certificaciones'], 403);
+            }
+
+            DB::table('certificacion')
+                ->where('id_certificacion', $id)
+                ->update([
+                    'estado'         => 'REGISTRADO',
+                    'motivo_rechazo' => null,
+                    'updated_at'     => now(),
+                ]);
+
+            $certActualizado = Certificacion::find($id);
+            $creadorCargo = User::find($cert->id_usuario)?->cargo;
+            if ($creadorCargo === 'Analista de presupuesto 1') {
+                $this->notificarAnalista3($certActualizado, Auth::user(), 'reenvio');
+            }
+
+            return response()->json(['success' => true, 'message' => 'Certificación reenviada para revisión']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ── Analista/Director: marcar certificación REGISTRADO/APROBADO → ERRADO ──
+    public function errar(int $id)
+    {
+        $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema', 'Analista de presupuesto 1'];
+        if (!in_array(Auth::user()?->cargo, $rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para marcar como errado'], 403);
+        }
+
+        try {
+            $cert = DB::table('certificacion')->where('id_certificacion', $id)->first();
+            if (!$cert) {
+                return response()->json(['success' => false, 'message' => 'Certificación no encontrada'], 404);
+            }
+
+            $user       = Auth::user();
+            $esDirector = in_array($user?->cargo, ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema']);
+
+            if (!in_array($cert->estado, ['REGISTRADO', 'APROBADO'])) {
+                return response()->json(['success' => false, 'message' => 'Solo se pueden marcar como erradas las certificaciones en estado REGISTRADO o APROBADO'], 422);
+            }
+
+            // APROBADO → ERRADO solo lo puede hacer el Director
+            if ($cert->estado === 'APROBADO' && !$esDirector) {
+                return response()->json(['success' => false, 'message' => 'Solo el Director puede marcar como errada una certificación aprobada'], 403);
+            }
+
+            // Analista solo puede errar sus propias certificaciones REGISTRADAS
+            if (!$esDirector && $cert->id_usuario != $user?->id_usuario) {
+                return response()->json(['success' => false, 'message' => 'Solo puede marcar como errada sus propias certificaciones'], 403);
+            }
+
+            $estadoAnterior = $cert->estado;
+
+            DB::table('certificacion')
+                ->where('id_certificacion', $id)
+                ->update(['estado' => 'ERRADO', 'updated_at' => now()]);
+
+            try {
+                Auditoria::create([
+                    'id_certificacion'   => $id,
+                    'numero_certificado' => $cert->numero_certificado,
+                    'id_usuario'         => $user?->id_usuario,
+                    'nombre_usuario'     => $user ? trim($user->nombres . ' ' . $user->apellidos) : 'Sistema',
+                    'accion'             => 'CAMBIO_ESTADO',
+                    'estado_anterior'    => $estadoAnterior,
+                    'estado_nuevo'       => 'ERRADO',
+                    'fecha_hora'         => now(),
+                ]);
+            } catch (\Throwable $ae) {
+                \Log::error('Auditoria::errar error: ' . $ae->getMessage());
+            }
+
+            return response()->json(['success' => true, 'message' => 'Certificación marcada como errada']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 }

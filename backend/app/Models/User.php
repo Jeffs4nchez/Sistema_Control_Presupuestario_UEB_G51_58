@@ -40,6 +40,7 @@ class User extends Authenticatable
         'cargo',
         'estado',
         'contrasena_temporal',
+        'intentos_fallidos',
         'api_token',
         'password_reset_token',
         'password_reset_expires_at',

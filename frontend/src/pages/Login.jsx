@@ -12,6 +12,9 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
+  const [intentosRestantes, setIntentosRestantes] = useState(null);
+  const [cuentaBloqueada, setCuentaBloqueada] = useState(false);
+  const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -40,7 +43,7 @@ export const Login = () => {
     if (!email.trim()) {
       errors.email = '📧 El correo es requerido';
       isValid = false;
-    } else if (!isValidEmail(email)) {
+    } else if (!isValidEmail(email.trim())) {
       errors.email = '❌ Formato de correo inválido';
       isValid = false;
     }
@@ -62,29 +65,31 @@ export const Login = () => {
     e.preventDefault();
     setError('');
     setFieldErrors({ email: '', password: '' });
+    setIntentosRestantes(null);
 
-    // Validar antes de enviar
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
 
     try {
-      const result = await login(email, password);
+      const result = await login(email.trim(), password);
       if (result.success) {
+        setShowSuccessScreen(true);
         navigate('/dashboard');
       } else {
-        // Mensajes de error más específicos
-        let errorMessage = result.error || 'Error al iniciar sesión';
-
-        if (errorMessage.includes('Usuario no encontrado')) {
-          errorMessage = '👤 El usuario no existe en el sistema';
-        } else if (errorMessage.includes('Contraseña incorrecta')) {
-          errorMessage = '🔑 Contraseña incorrecta. Intenta de nuevo';
+        if (result.bloqueado) {
+          setCuentaBloqueada(true);
+          setIntentosRestantes(null);
+        } else {
+          let errorMessage = result.error || 'Error al iniciar sesión';
+          if (errorMessage.includes('Usuario no encontrado')) {
+            errorMessage = '👤 El usuario no existe en el sistema';
+          }
+          setError(errorMessage);
+          if (result.intentos_restantes !== null && result.intentos_restantes !== undefined) {
+            setIntentosRestantes(result.intentos_restantes);
+          }
         }
-
-        setError(errorMessage);
       }
     } catch (err) {
       setError('❌ Error de conexión. Verifica tu conexión a internet');
@@ -95,7 +100,7 @@ export const Login = () => {
 
   return (
     <>
-      {isLoading && <LoadingScreen message="Verificando credenciales..." />}
+      {showSuccessScreen && <LoadingScreen message="Cargando el sistema..." />}
 
     <div
       style={{
@@ -164,39 +169,68 @@ export const Login = () => {
             Credenciales Institucionales
           </h2>
 
-          {error && (
+          {/* Cuenta bloqueada */}
+          {cuentaBloqueada && (
+            <div style={{
+              marginBottom: theme.spacing.lg,
+              padding: `${theme.spacing.lg} ${theme.spacing.lg}`,
+              background: '#fff7ed',
+              border: '2px solid #f97316',
+              borderRadius: theme.border.radiusSmall,
+              display: 'flex', alignItems: 'flex-start', gap: theme.spacing.md,
+            }}>
+              <span style={{ fontSize: '24px', lineHeight: '1.2', flexShrink: 0 }}>🔒</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ color: '#9a3412', fontSize: theme.typography.fontSize.sm, fontWeight: 700, margin: '0 0 4px 0' }}>
+                  Cuenta bloqueada
+                </p>
+                <p style={{ color: '#c2410c', fontSize: isMobile ? theme.typography.fontSize.xs : theme.typography.fontSize.sm, margin: '0 0 8px 0', lineHeight: 1.5 }}>
+                  Tu cuenta fue bloqueada por 3 intentos fallidos. Comunícate con el administrador del sistema para que la desbloquee.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Error general */}
+          {error && !cuentaBloqueada && (
             <div style={{
               marginBottom: theme.spacing.lg,
               padding: `${theme.spacing.md} ${theme.spacing.lg}`,
               background: '#fef2f2',
               border: `2px solid ${theme.colors.error.border}`,
               borderRadius: theme.border.radiusSmall,
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: theme.spacing.md
+              display: 'flex', alignItems: 'flex-start', gap: theme.spacing.md,
             }}>
               <span style={{ fontSize: '20px', lineHeight: '1.4' }}>⚠️</span>
               <div style={{ flex: 1 }}>
-                <p style={{
-                  color: theme.colors.error.text,
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  margin: '0 0 4px 0'
-                }}>
+                <p style={{ color: theme.colors.error.text, fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.medium, margin: '0 0 4px 0' }}>
                   Error al iniciar sesión
                 </p>
-                <p style={{
-                  color: '#b91c1c',
-                  fontSize: isMobile ? theme.typography.fontSize.xs : theme.typography.fontSize.sm,
-                  margin: '0'
-                }}>
+                <p style={{ color: '#b91c1c', fontSize: isMobile ? theme.typography.fontSize.xs : theme.typography.fontSize.sm, margin: '0 0 6px 0' }}>
                   {error}
                 </p>
+                {intentosRestantes !== null && (
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '4px 10px',
+                    background: intentosRestantes === 1 ? '#fef2f2' : '#fff7ed',
+                    border: `1px solid ${intentosRestantes === 1 ? '#fca5a5' : '#fed7aa'}`,
+                    borderRadius: '6px',
+                    fontSize: theme.typography.fontSize.xs,
+                    fontWeight: 700,
+                    color: intentosRestantes === 1 ? '#b91c1c' : '#c2410c',
+                  }}>
+                    {intentosRestantes === 1 ? '🔴' : '🟡'}
+                    {intentosRestantes === 1
+                      ? 'Último intento — si falla, tu cuenta quedará bloqueada'
+                      : `Te quedan ${intentosRestantes} intentos`}
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg, opacity: cuentaBloqueada ? 0.45 : 1, pointerEvents: cuentaBloqueada ? 'none' : 'auto' }}>
             {/* Campo Correo */}
             <div>
               <div style={{

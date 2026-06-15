@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Cookies from 'js-cookie'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Building2, Plus, Search, RefreshCw, Edit2, Trash2, X, Check, AlertCircle } from 'lucide-react'
+import { cachedFetch, invalidateCache } from '../utils/apiCache'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
@@ -35,6 +36,37 @@ const LABEL_S = {
 
 const EMPTY_FORM = { nombre_entidad: '', responsable_entidad: '', correo_institucional: '' }
 
+function SkeletonEntidadesRows() {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="ueb-table">
+        <thead>
+          <tr>
+            {['Unidad', 'Responsable', 'Correo Institucional', 'Acciones'].map((h, i) => (
+              <th key={i}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[0, 1, 2, 3, 4].map(i => (
+            <tr key={i}>
+              <td><div className="skeleton" style={{ width: '160px', height: '13px', borderRadius: '6px' }} /></td>
+              <td><div className="skeleton" style={{ width: '120px', height: '12px', borderRadius: '6px' }} /></td>
+              <td><div className="skeleton" style={{ width: '180px', height: '12px', borderRadius: '6px' }} /></td>
+              <td>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <div className="skeleton" style={{ width: '62px', height: '28px', borderRadius: '6px' }} />
+                  <div className="skeleton" style={{ width: '70px', height: '28px', borderRadius: '6px' }} />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function EntidadRequiriente() {
   const [entidades,  setEntidades]  = useState([])
   const [loading,    setLoading]    = useState(false)
@@ -52,7 +84,7 @@ export default function EntidadRequiriente() {
   const fetchEntidades = useCallback(async (q = '') => {
     setLoading(true)
     try {
-      const res  = await fetch(`${API}/entidades-requirientes?search=${encodeURIComponent(q)}`, { headers: headers() })
+      const res  = await cachedFetch(`${API}/unidades-requirientes?search=${encodeURIComponent(q)}`, { headers: headers() })
       const json = await res.json()
       if (json.success) setEntidades(json.data)
     } catch (e) { console.error(e) }
@@ -65,19 +97,20 @@ export default function EntidadRequiriente() {
   const openEdit   = (e) => {
     setForm({ nombre_entidad: e.nombre_entidad || '', responsable_entidad: e.responsable_entidad || '', correo_institucional: e.correo_institucional || '' })
     setFormError(''); setFormOk('')
-    setModal({ open: true, mode: 'edit', id: e.id_entidad_requiriente })
+    setModal({ open: true, mode: 'edit', id: e.id_unidad_requiriente })
   }
   const closeModal = () => { setModal({ open: false, mode: 'create', id: null }); setFormError(''); setFormOk('') }
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setFormError(''); setFormOk(''); setSaving(true)
     try {
-      const url    = modal.mode === 'create' ? `${API}/entidades-requirientes` : `${API}/entidades-requirientes/${modal.id}`
+      const url    = modal.mode === 'create' ? `${API}/unidades-requirientes` : `${API}/unidades-requirientes/${modal.id}`
       const method = modal.mode === 'create' ? 'POST' : 'PUT'
       const res  = await fetch(url, { method, headers: headers(), body: JSON.stringify(form) })
       const json = await res.json()
       if (json.success) {
         setFormOk(json.message || 'Guardado exitosamente.')
+        invalidateCache('/unidades-requirientes')
         fetchEntidades(search)
         if (modal.mode === 'create') setForm(EMPTY_FORM)
       } else { setFormError(json.message || 'Error al guardar.') }
@@ -88,9 +121,9 @@ export default function EntidadRequiriente() {
   const handleDelete = async () => {
     setDeleting(true)
     try {
-      const res  = await fetch(`${API}/entidades-requirientes/${deleteId}`, { method: 'DELETE', headers: headers() })
+      const res  = await fetch(`${API}/unidades-requirientes/${deleteId}`, { method: 'DELETE', headers: headers() })
       const json = await res.json()
-      if (json.success) { setDeleteId(null); fetchEntidades(search) }
+      if (json.success) { setDeleteId(null); invalidateCache('/unidades-requirientes'); fetchEntidades(search) }
     } catch (e) { console.error(e) }
     finally { setDeleting(false) }
   }
@@ -108,7 +141,7 @@ export default function EntidadRequiriente() {
               <Building2 size={18} color={ACCENT} />
             </div>
             <div>
-              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: TEXT, letterSpacing: '-0.02em' }}>Entidades Requirientes</h1>
+              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: TEXT, letterSpacing: '-0.02em' }}>Unidades Requirientes</h1>
               <p style={{ margin: 0, fontSize: '12px', color: MUTED }}>Organismos que solicitan certificaciones presupuestarias.</p>
             </div>
           </div>
@@ -116,7 +149,7 @@ export default function EntidadRequiriente() {
             onClick={openCreate}
             style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', background: 'linear-gradient(135deg, #1a3a5c, #2e6ca4)', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-primary)', boxShadow: '0 4px 16px rgba(26,58,92,0.25)' }}
           >
-            <Plus size={15} /> Nueva Entidad
+            <Plus size={15} /> Nueva Unidad
           </motion.button>
         </motion.div>
       </div>
@@ -128,10 +161,10 @@ export default function EntidadRequiriente() {
         >
           <form onSubmit={e => { e.preventDefault(); fetchEntidades(search) }} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: '200px' }}>
-              <label style={LABEL_S}>Buscar entidad</label>
+              <label style={LABEL_S}>Buscar unidad</label>
               <div style={{ position: 'relative' }}>
                 <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: MUTED, pointerEvents: 'none' }} />
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre, responsable o correo..."
+                <input type="text" value={search} onChange={e => setSearch(e.target.value.slice(0, 100))} maxLength={100} placeholder="Nombre, responsable o correo..."
                   style={{ ...INPUT_S, paddingLeft: '28px' }}
                   onFocus={e => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)' }}
                   onBlur={e => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none' }}
@@ -149,7 +182,7 @@ export default function EntidadRequiriente() {
               <RefreshCw size={13} />
             </motion.button>
           </form>
-          {!loading && <div style={{ marginTop: '8px', fontSize: '12px', color: MUTED }}>{entidades.length} entidad(es) registrada(s)</div>}
+          {!loading && <div style={{ marginTop: '8px', fontSize: '12px', color: MUTED }}>{entidades.length} unidad(es) registrada(s)</div>}
         </motion.div>
 
         {/* Table */}
@@ -157,13 +190,10 @@ export default function EntidadRequiriente() {
           style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', overflow: 'hidden', backdropFilter: 'blur(12px)', boxShadow: '0 2px 16px rgba(26,58,92,0.06)' }}
         >
           {loading ? (
-            <div style={{ padding: '48px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
-              <div style={{ width: '32px', height: '32px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: ACCENT, borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
-              Cargando...
-            </div>
+            <SkeletonEntidadesRows />
           ) : entidades.length === 0 ? (
             <div style={{ padding: '48px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
-              No hay entidades registradas.{' '}
+              No hay unidades registradas.{' '}
               <button onClick={openCreate} style={{ color: ACCENT, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-primary)', fontSize: '13px', textDecoration: 'underline' }}>
                 Crear la primera
               </button>
@@ -173,14 +203,14 @@ export default function EntidadRequiriente() {
               <table className="ueb-table">
                 <thead>
                   <tr>
-                    {['Entidad', 'Responsable', 'Correo Institucional', 'Acciones'].map((h, i) => (
+                    {['Unidad', 'Responsable', 'Correo Institucional', 'Acciones'].map((h, i) => (
                       <th key={i}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {entidades.map((ent, idx) => (
-                    <motion.tr key={ent.id_entidad_requiriente}
+                    <motion.tr key={ent.id_unidad_requiriente}
                       initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: idx * 0.04, duration: 0.22 }}
                     >
@@ -196,7 +226,7 @@ export default function EntidadRequiriente() {
                             <Edit2 size={11} /> Editar
                           </motion.button>
                           <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                            onClick={() => setDeleteId(ent.id_entidad_requiriente)}
+                            onClick={() => setDeleteId(ent.id_unidad_requiriente)}
                             style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: 'rgba(185,28,28,0.10)', border: '1px solid rgba(185,28,28,0.25)', borderRadius: '6px', color: RED, cursor: 'pointer', fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-primary)' }}
                           >
                             <Trash2 size={11} /> Eliminar
@@ -216,19 +246,19 @@ export default function EntidadRequiriente() {
       <AnimatePresence>
         {modal.open && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(10,25,47,0.50)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,30,55,0.55)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
           >
-            <motion.div initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 20 }}
-              transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+            <motion.div initial={{ scale: 0.88, opacity: 0, y: 24 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.88, opacity: 0, y: 24 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
               onClick={e => e.stopPropagation()}
-              style={{ background: 'rgba(255,255,255,0.97)', border: '1px solid rgba(255,255,255,0.95)', borderRadius: '20px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(10,25,47,0.25)', overflow: 'hidden', fontFamily: 'var(--font-primary)' }}
+              style={{ background: '#ffffff', borderRadius: '18px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'var(--font-primary)' }}
             >
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', background: 'linear-gradient(135deg, #0d1f35, #1a3a5c)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <Building2 size={16} color="#54b3e0" />
                   <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>
-                    {modal.mode === 'create' ? 'Nueva Entidad Requiriente' : 'Editar Entidad'}
+                    {modal.mode === 'create' ? 'Nueva Unidad Requiriente' : 'Editar Unidad'}
                   </span>
                 </div>
                 <motion.button whileHover={{ scale: 1.1 }} onClick={closeModal}
@@ -259,15 +289,15 @@ export default function EntidadRequiriente() {
                 <form onSubmit={handleSubmit}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {[
-                      { label: 'Nombre de la entidad *', key: 'nombre_entidad',       type: 'text',  placeholder: '' },
-                      { label: 'Responsable *',          key: 'responsable_entidad',  type: 'text',  placeholder: '' },
-                      { label: 'Correo institucional *', key: 'correo_institucional', type: 'email', placeholder: '' },
-                    ].map(({ label, key, type, placeholder }) => (
+                      { label: 'Nombre de la unidad *', key: 'nombre_entidad',       type: 'text',  placeholder: 'Ej: Dirección Financiera',        max: 100 },
+                      { label: 'Responsable *',          key: 'responsable_entidad',  type: 'text',  placeholder: 'Nombre completo del responsable',  max: 80  },
+                      { label: 'Correo institucional *', key: 'correo_institucional', type: 'email', placeholder: 'correo@ueb.edu.ec',               max: 60  },
+                    ].map(({ label, key, type, placeholder, max }) => (
                       <div key={key}>
                         <label style={LABEL_S}>{label}</label>
-                        <input type={type} value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                          placeholder={placeholder} maxLength={100}
-                          required={key !== 'memorando'} style={INPUT_S}
+                        <input type={type} value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value.slice(0, max) }))}
+                          placeholder={placeholder} maxLength={max}
+                          required style={INPUT_S}
                           onFocus={e => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)' }}
                           onBlur={e => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none' }}
                         />
@@ -285,7 +315,7 @@ export default function EntidadRequiriente() {
                       type="submit" disabled={saving}
                       style={{ flex: 2, padding: '9px', background: saving ? 'rgba(26,58,92,0.08)' : 'linear-gradient(135deg, #1a3a5c, #2e6ca4)', color: saving ? MUTED : '#fff', border: 'none', borderRadius: '8px', cursor: saving ? 'default' : 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-primary)', boxShadow: saving ? 'none' : '0 4px 16px rgba(26,58,92,0.25)', transition: 'all 0.18s ease' }}
                     >
-                      {saving ? 'Guardando...' : modal.mode === 'create' ? 'Crear Entidad' : 'Guardar Cambios'}
+                      {saving ? 'Guardando...' : modal.mode === 'create' ? 'Crear Unidad' : 'Guardar Cambios'}
                     </motion.button>
                   </div>
                 </form>
@@ -299,20 +329,20 @@ export default function EntidadRequiriente() {
       <AnimatePresence>
         {deleteId && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(10,25,47,0.50)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,30,55,0.55)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
           >
-            <motion.div initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 20 }}
-              transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+            <motion.div initial={{ scale: 0.88, opacity: 0, y: 24 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.88, opacity: 0, y: 24 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
               onClick={e => e.stopPropagation()}
-              style={{ background: 'rgba(255,255,255,0.97)', border: '1px solid rgba(255,255,255,0.95)', borderRadius: '20px', width: '100%', maxWidth: '380px', boxShadow: '0 24px 80px rgba(10,25,47,0.25)', overflow: 'hidden' }}
+              style={{ background: '#ffffff', borderRadius: '18px', width: '100%', maxWidth: '380px', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', overflow: 'hidden' }}
             >
               <div style={{ padding: '18px 22px', background: 'linear-gradient(135deg, #6b0f0f, #b91c1c)', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Trash2 size={16} color="#fff" />
-                <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>Eliminar Entidad</span>
+                <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>Eliminar Unidad</span>
               </div>
               <div style={{ padding: '22px' }}>
                 <p style={{ margin: '0 0 20px', fontSize: '13px', color: MUTED, lineHeight: 1.6 }}>
-                  ¿Está seguro? Esta acción no se puede deshacer. Si la entidad tiene certificaciones asociadas, no podrá eliminarse.
+                  ¿Está seguro? Esta acción no se puede deshacer. Si la unidad tiene certificaciones asociadas, no podrá eliminarse.
                 </p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={() => setDeleteId(null)} style={{ flex: 1, padding: '9px', background: 'rgba(26,58,92,0.06)', color: MUTED, border: '1px solid rgba(26,58,92,0.12)', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-primary)' }}>

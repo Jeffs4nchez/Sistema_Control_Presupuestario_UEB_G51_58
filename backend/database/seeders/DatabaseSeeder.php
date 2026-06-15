@@ -14,6 +14,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Los usuarios se crean en la migración
+        $this->call([
+            UserSeeder::class,
+        ]);
     }
 }

@@ -36,56 +36,116 @@ class EstructuraPresupuestariaController extends Controller
         }
 
         try {
-            // Guardar el archivo temporalmente
-            $file = $request->file('csv_file');
-            $content = $file->getContent();
-            
-            // Procesar el CSV
-            $lines = explode("\n", $content);
-            $header = null;
-            $rowNum = 0;
-            $cache = [];
-            $processedCount = 0;
+            $file    = $request->file('csv_file');
+            $raw     = $file->getContent();
+            $encoding = mb_detect_encoding($raw, ['UTF-8', 'Windows-1252', 'ISO-8859-1', 'UTF-16'], true);
+            $content = $encoding && $encoding !== 'UTF-8'
+                ? mb_convert_encoding($raw, 'UTF-8', $encoding)
+                : $raw;
+            // Eliminar BOM UTF-8 si existe
+            $content = ltrim($content, "\xEF\xBB\xBF");
+            $content = str_replace("\r\n", "\n", str_replace("\r", "\n", $content));
+            $lines   = explode("\n", $content);
 
-            foreach ($lines as $lineNum => $line) {
-                $rowNum = $lineNum + 1;
-                
-                // Saltar encabezado
-                if ($rowNum === 1) {
-                    $header = str_getcsv($line, ';');
-                    continue;
-                }
-                
-                if (empty(trim($line))) {
-                    continue;
-                }
+            // ── FASE 1: Validar encabezado ──────────────────────────────────
+            if (count($lines) < 2) {
+                return response()->json(['success' => false, 'message' => 'El archivo está vacío o solo contiene el encabezado.'], 422);
+            }
+            $header    = str_getcsv($lines[0], ';');
+            $headerStr = strtoupper(implode('|', array_map('trim', $header)));
+
+            // Detectar si es un CSV de Cédula Presupuestaria subido por error
+            $esCedula = str_contains($headerStr, 'DESCRIPCIONG')
+                     || str_contains($headerStr, 'CODIGOG')
+                     || preg_match('/\|COL\d+\|/', $headerStr);
+            if ($esCedula) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Archivo incorrecto: este CSV corresponde a la Cédula Presupuestaria, no a la Estructura. Súbalo en la sección "Cédula Presupuestaria".',
+                    'hint'    => 'El encabezado contiene columnas propias de la cédula (DESCRIPCIONG, CODIGOG o COL1-COL10).',
+                ], 422);
+            }
+
+            if (count($header) < 18) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Formato de archivo incorrecto: el encabezado tiene ' . count($header) . ' columnas, se requieren mínimo 18. Verifica que el delimitador sea punto y coma (;).',
+                ], 422);
+            }
+
+            // ── FASE 2: Procesar filas de datos ────────────────────────────
+            $cache         = [];
+            $processedCount = 0;
+            $insertedCount  = 0;
+            $existingCount  = 0;
+            $skippedCount   = 0;
+            $errors         = [];
+            $dataLines      = array_slice($lines, 1);
+            $totalDataRows  = 0;
+
+            foreach ($dataLines as $idx => $line) {
+                $rowNum = $idx + 2; // +2: fila 1 es encabezado
+
+                if (empty(trim($line))) continue;
+                $totalDataRows++;
 
                 try {
                     $row = str_getcsv($line, ';');
-                    
+
+                    // Validar cantidad de columnas
                     if (count($row) < 18) {
+                        $errors[] = ['row' => $rowNum, 'error' => 'Columnas insuficientes: se encontraron ' . count($row) . ', se requieren 18'];
+                        $skippedCount++;
                         continue;
                     }
 
                     // Mapear columnas
-                    $codPrograma = trim($row[0]);
-                    $nomPrograma = trim($row[1]);
+                    $codPrograma    = trim($row[0]);
+                    $nomPrograma    = trim($row[1]);
                     $codSubprograma = trim($row[2]);
                     $nomSubprograma = trim($row[3]);
-                    $codProyecto = trim($row[4]);
-                    $nomProyecto = trim($row[5]);
-                    $codActividad = trim($row[6]);
-                    $nomActividad = trim($row[7]);
-                    $codItem = trim($row[8]);
-                    $nomItem = trim($row[9]);
-                    $codUbicacion = trim($row[10]);
-                    $nomUbicacion = trim($row[11]);
-                    $codFuente = trim($row[12]);
-                    $nomFuente = trim($row[13]);
-                    $codOrganismo = trim($row[14]);
-                    $nomOrganismo = trim($row[15]);
-                    $codNaturaleza = trim($row[16]);
-                    $nomNaturaleza = trim($row[17]);
+                    $codProyecto    = trim($row[4]);
+                    $nomProyecto    = trim($row[5]);
+                    $codActividad   = trim($row[6]);
+                    $nomActividad   = trim($row[7]);
+                    $codItem        = trim($row[8]);
+                    $nomItem        = trim($row[9]);
+                    $codUbicacion   = trim($row[10]);
+                    $nomUbicacion   = trim($row[11]);
+                    $codFuente      = trim($row[12]);
+                    $nomFuente      = trim($row[13]);
+                    $codOrganismo   = trim($row[14]);
+                    $nomOrganismo   = trim($row[15]);
+                    $codNaturaleza  = trim($row[16]);
+                    $nomNaturaleza  = trim($row[17]);
+
+                    // Restaurar ceros a la izquierda que Excel elimina al guardar como CSV
+                    // Los códigos numéricos tienen longitud fija; los que llevan espacios (subprograma,
+                    // proyecto, actividad) no pueden ser convertidos a número por Excel, así que
+                    // solo se padean los puramente numéricos.
+                    if (is_numeric($codPrograma))   $codPrograma   = str_pad($codPrograma,  2, '0', STR_PAD_LEFT);
+                    if (is_numeric($codItem))        $codItem       = str_pad($codItem,      6, '0', STR_PAD_LEFT);
+                    if (is_numeric($codUbicacion))   $codUbicacion  = str_pad($codUbicacion, 4, '0', STR_PAD_LEFT);
+                    if (is_numeric($codFuente))      $codFuente     = str_pad($codFuente,    3, '0', STR_PAD_LEFT);
+                    if (is_numeric($codOrganismo))   $codOrganismo  = str_pad($codOrganismo, 4, '0', STR_PAD_LEFT);
+                    if (is_numeric($codNaturaleza))  $codNaturaleza = str_pad($codNaturaleza,4, '0', STR_PAD_LEFT);
+
+                    // Validar campos de código obligatorios (no pueden estar vacíos)
+                    $camposVacios = [];
+                    if ($codPrograma   === '') $camposVacios[] = 'Cód.Programa';
+                    if ($codSubprograma === '') $camposVacios[] = 'Cód.Subprograma';
+                    if ($codProyecto   === '') $camposVacios[] = 'Cód.Proyecto';
+                    if ($codActividad  === '') $camposVacios[] = 'Cód.Actividad';
+                    if ($codItem       === '') $camposVacios[] = 'Cód.Ítem';
+                    if ($codUbicacion  === '') $camposVacios[] = 'Cód.Ubicación';
+                    if ($codFuente     === '') $camposVacios[] = 'Cód.Fuente';
+                    if ($codOrganismo  === '') $camposVacios[] = 'Cód.Organismo';
+                    if ($codNaturaleza === '') $camposVacios[] = 'Cód.Naturaleza';
+                    if (!empty($camposVacios)) {
+                        $errors[] = ['row' => $rowNum, 'error' => 'Campos vacíos: ' . implode(', ', $camposVacios)];
+                        $skippedCount++;
+                        continue;
+                    }
 
                     // 1. Insertar o buscar PROGRAMA
                     $cacheKeyPrograma = "programa_$codPrograma";
@@ -204,32 +264,50 @@ class EstructuraPresupuestariaController extends Controller
                             'id_naturaleza' => $idNaturaleza
                         ]
                     );
-
                     // 10. Crear relación ACTIVIDAD-FUENTE
                     DB::table('actividad_fuente')->updateOrInsert(
                         ['id_actividad' => $idActividad, 'id_fuente' => $idFuente],
                         ['created_at' => now(), 'updated_at' => now()]
                     );
 
-                    // 11. Crear relación ITEM-FUENTE (sin duplicar)
-                    DB::table('fuente_items')->updateOrInsert(
-                        ['id_item' => $item->id_item, 'id_fuente' => $idFuente],
-                        ['id_cedula_presupuestaria' => $idCedulaPresupuestaria, 'created_at' => now(), 'updated_at' => now()]
-                    );
+                    // 11. Crear relación ITEM-FUENTE-CÉDULA (PK compuesta por año)
+                    $fuenteItemExistia = DB::table('fuente_items')
+                        ->where('id_item',                 $item->id_item)
+                        ->where('id_fuente',               $idFuente)
+                        ->where('id_cedula_presupuestaria', $idCedulaPresupuestaria)
+                        ->exists();
+
+                    if (!$fuenteItemExistia) {
+                        DB::table('fuente_items')->insert([
+                            'id_item'                  => $item->id_item,
+                            'id_fuente'                => $idFuente,
+                            'id_cedula_presupuestaria' => $idCedulaPresupuestaria,
+                            'created_at'               => now(),
+                            'updated_at'               => now(),
+                        ]);
+                    }
+
+                    if ($fuenteItemExistia) { $existingCount++; } else { $insertedCount++; }
 
                     $processedCount++;
 
                 } catch (\Exception $e) {
-                    \Log::warning("Error en fila $rowNum: " . $e->getMessage());
+                    $errors[] = ['row' => $rowNum, 'error' => 'Error interno: ' . $e->getMessage()];
+                    $skippedCount++;
                 }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => "Estructura presupuestaria cargada exitosamente. $processedCount filas procesadas",
+                'message' => "$processedCount de $totalDataRows filas procesadas. $insertedCount nuevas, $existingCount ya existían, $skippedCount omitidas.",
                 'data' => [
-                    'processed' => $processedCount,
-                    'timestamp' => now()
+                    'total_rows' => $totalDataRows,
+                    'processed'  => $processedCount,
+                    'inserted'   => $insertedCount,
+                    'existing'   => $existingCount,
+                    'skipped'    => $skippedCount,
+                    'errors'     => array_slice($errors, 0, 20),
+                    'timestamp'  => now()
                 ]
             ], 200);
 
@@ -259,15 +337,15 @@ class EstructuraPresupuestariaController extends Controller
                 ->whereIn('id_item', $itemIds)
                 ->distinct()->pluck('id_actividad');
 
-            $proyIds = DB::table('actividades')
+            $proyIds = DB::table('actividad')
                 ->whereIn('id_actividad', $actIds)
                 ->distinct()->pluck('id_proyecto');
 
-            $subpIds = DB::table('proyectos')
+            $subpIds = DB::table('proyecto')
                 ->whereIn('id_proyecto', $proyIds)
                 ->distinct()->pluck('id_subprograma');
 
-            $progIds = DB::table('subprogramas')
+            $progIds = DB::table('subprograma')
                 ->whereIn('id_subprograma', $subpIds)
                 ->distinct()->pluck('id_programa');
 
@@ -321,9 +399,9 @@ class EstructuraPresupuestariaController extends Controller
                     $query = Programa::query();
                     if ($idCedula) {
                         $actIds  = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
-                        $proyIds = DB::table('actividades')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
-                        $subpIds = DB::table('proyectos')->whereIn('id_proyecto', $proyIds)->distinct()->pluck('id_subprograma');
-                        $progIds = DB::table('subprogramas')->whereIn('id_subprograma', $subpIds)->distinct()->pluck('id_programa');
+                        $proyIds = DB::table('actividad')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
+                        $subpIds = DB::table('proyecto')->whereIn('id_proyecto', $proyIds)->distinct()->pluck('id_subprograma');
+                        $progIds = DB::table('subprograma')->whereIn('id_subprograma', $subpIds)->distinct()->pluck('id_programa');
                         $query->whereIn('id_programa', $progIds);
                     }
                     if ($search) {
@@ -335,8 +413,8 @@ class EstructuraPresupuestariaController extends Controller
                     $query = Subprograma::with('programa');
                     if ($idCedula) {
                         $actIds  = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
-                        $proyIds = DB::table('actividades')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
-                        $subpIds = DB::table('proyectos')->whereIn('id_proyecto', $proyIds)->distinct()->pluck('id_subprograma');
+                        $proyIds = DB::table('actividad')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
+                        $subpIds = DB::table('proyecto')->whereIn('id_proyecto', $proyIds)->distinct()->pluck('id_subprograma');
                         $query->whereIn('id_subprograma', $subpIds);
                     }
                     if ($search) {
@@ -348,7 +426,7 @@ class EstructuraPresupuestariaController extends Controller
                     $query = Proyecto::with('subprograma.programa');
                     if ($idCedula) {
                         $actIds  = DB::table('items')->whereIn('id_item', $itemIdsByCedula)->distinct()->pluck('id_actividad');
-                        $proyIds = DB::table('actividades')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
+                        $proyIds = DB::table('actividad')->whereIn('id_actividad', $actIds)->distinct()->pluck('id_proyecto');
                         $query->whereIn('id_proyecto', $proyIds);
                     }
                     if ($search) {

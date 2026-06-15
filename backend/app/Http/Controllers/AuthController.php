@@ -25,23 +25,56 @@ class AuthController extends Controller
 
         $user = User::where('correo_institucional', $request->email)->first();
 
-        \Log::info('User found', ['user' => $user ? 'YES' : 'NO']);
-
         if (!$user) {
-            \Log::warning('User not found for email: ' . $request->email);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Usuario no encontrado',
             ], 401);
         }
 
-        if (!Hash::check($request->password, $user->contrasena)) {
-            \Log::warning('Invalid password for user: ' . $request->email);
+        // Cuenta bloqueada por intentos fallidos
+        if (strtolower($user->estado) === 'bloqueado') {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Contraseña incorrecta',
+                'status'   => 'error',
+                'message'  => 'Tu cuenta está bloqueada por múltiples intentos fallidos. Contacta al administrador.',
+                'bloqueado' => true,
+            ], 403);
+        }
+
+        // Contraseña incorrecta — contar intentos
+        if (!Hash::check($request->password, $user->contrasena)) {
+            $user->intentos_fallidos = ($user->intentos_fallidos ?? 0) + 1;
+
+            if ($user->intentos_fallidos >= 3) {
+                $user->estado = 'bloqueado';
+                $user->save();
+                \Log::warning('Account blocked after 3 failed attempts: ' . $request->email);
+                return response()->json([
+                    'status'    => 'error',
+                    'message'   => 'Tu cuenta ha sido bloqueada por 3 intentos fallidos. Contacta al administrador.',
+                    'bloqueado' => true,
+                ], 403);
+            }
+
+            $user->save();
+            $restantes = 3 - $user->intentos_fallidos;
+            return response()->json([
+                'status'             => 'error',
+                'message'            => 'Contraseña incorrecta.',
+                'intentos_restantes' => $restantes,
             ], 401);
         }
+
+        // Cuenta inactiva (no bloqueada)
+        if (strtolower($user->estado) === 'inactivo') {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Tu cuenta está inactiva. Contacta al administrador.',
+            ], 403);
+        }
+
+        // Login correcto — resetear intentos fallidos
+        $user->intentos_fallidos = 0;
 
         // Generar token único
         $token = bin2hex(random_bytes(32));
@@ -116,6 +149,13 @@ class AuthController extends Controller
                 'status' => 'error',
                 'message' => 'Usuario no encontrado',
             ], 404);
+        }
+
+        if (strtolower($user->estado) !== 'activo') {
+            $msg = strtolower($user->estado) === 'bloqueado'
+                ? 'Tu cuenta está bloqueada. Contacta al administrador.'
+                : 'Tu cuenta está inactiva. Contacta al administrador.';
+            return response()->json(['status' => 'error', 'message' => $msg, 'bloqueado' => strtolower($user->estado) === 'bloqueado'], 403);
         }
 
         return response()->json([

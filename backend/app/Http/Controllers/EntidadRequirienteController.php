@@ -8,7 +8,7 @@ use App\Models\EntidadRequiriente;
 class EntidadRequirienteController extends Controller
 {
     /**
-     * GET /api/entidades-requirientes
+     * GET /api/unidades-requirientes
      */
     public function index(Request $request)
     {
@@ -35,7 +35,7 @@ class EntidadRequirienteController extends Controller
     }
 
     /**
-     * POST /api/entidades-requirientes
+     * POST /api/unidades-requirientes
      */
     public function store(Request $request)
     {
@@ -55,7 +55,7 @@ class EntidadRequirienteController extends Controller
             return response()->json([
                 'success' => true,
                 'data'    => $entidad,
-                'message' => 'Entidad requiriente creada exitosamente',
+                'message' => 'Unidad requiriente creada exitosamente',
             ], 201);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
@@ -63,7 +63,7 @@ class EntidadRequirienteController extends Controller
     }
 
     /**
-     * GET /api/entidades-requirientes/{id}
+     * GET /api/unidades-requirientes/{id}
      */
     public function show($id)
     {
@@ -76,7 +76,7 @@ class EntidadRequirienteController extends Controller
     }
 
     /**
-     * PUT /api/entidades-requirientes/{id}
+     * PUT /api/unidades-requirientes/{id}
      */
     public function update(Request $request, $id)
     {
@@ -97,7 +97,7 @@ class EntidadRequirienteController extends Controller
             return response()->json([
                 'success' => true,
                 'data'    => $entidad,
-                'message' => 'Entidad requiriente actualizada',
+                'message' => 'Unidad requiriente actualizada',
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
@@ -105,7 +105,7 @@ class EntidadRequirienteController extends Controller
     }
 
     /**
-     * DELETE /api/entidades-requirientes/{id}
+     * DELETE /api/unidades-requirientes/{id}
      */
     public function destroy($id)
     {
@@ -115,7 +115,7 @@ class EntidadRequirienteController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Entidad requiriente eliminada',
+                'message' => 'Unidad requiriente eliminada',
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);

@@ -1,4 +1,4 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
 import { FiscalYearProvider } from './contexts/FiscalYearContext';
 import { ProtectedRoute } from './contexts/ProtectedRoute';
@@ -7,7 +7,6 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Usuarios } from './pages/Usuarios';
 import { Inicio } from './pages/Inicio';
-import EstructuraPresupuestaria from './pages/EstructuraPresupuestaria';
 import CedulaPresupuestaria from './pages/CedulaPresupuestaria';
 import Certificacion from './pages/Certificacion';
 import Liquidaciones from './pages/Liquidaciones';
@@ -19,6 +18,14 @@ import ReportePrint from './pages/ReportePrint';
 import Auditoria from './pages/Auditoria';
 import './App.css';
 import { useContext } from 'react';
+import { can } from './utils/permissions';
+
+// Redirige al dashboard si el usuario no tiene permiso para esa ruta
+function RoleRoute({ check, children }) {
+  const { user } = useContext(AuthContext);
+  if (!check(user)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
 
 function AppContent() {
   const { isLoading } = useContext(AuthContext);
@@ -33,7 +40,7 @@ function AppContent() {
       <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
       <Route path="/restablecer-contrasena" element={<RestablecerContrasena />} />
       <Route path="/reporte-print" element={<ReportePrint />} />
-      
+
       {/* Dashboard Layout con rutas anidadas */}
       <Route
         path="/dashboard"
@@ -43,36 +50,57 @@ function AppContent() {
           </ProtectedRoute>
         }
       >
-        {/* Ruta para /dashboard/usuarios */}
-        <Route path="usuarios" element={<Usuarios />} />
-        
-        {/* Ruta para /dashboard/estructura-presupuestaria */}
-        <Route path="estructura-presupuestaria" element={<EstructuraPresupuestaria />} />
-        <Route path="estructura-presupuestaria-data" element={<EstructuraPresupuestaria />} />
+        {/* Solo Director y Admin */}
+        <Route path="usuarios" element={
+          <RoleRoute check={can.verUsuarios}>
+            <Usuarios />
+          </RoleRoute>
+        } />
 
-        {/* Ruta para /dashboard/cedula-presupuestaria */}
-        <Route path="cedula-presupuestaria" element={<CedulaPresupuestaria />} />
+        <Route path="estructura-presupuestaria" element={<Navigate to="/dashboard/cedula-presupuestaria" replace />} />
+        <Route path="estructura-presupuestaria-data" element={<Navigate to="/dashboard/cedula-presupuestaria" replace />} />
 
-        {/* Ruta para /dashboard/certificacion */}
-        <Route path="certificacion" element={<Certificacion />} />
+        {/* Director, Analista y Admin */}
+        <Route path="cedula-presupuestaria" element={
+          <RoleRoute check={can.verCedula}>
+            <CedulaPresupuestaria />
+          </RoleRoute>
+        } />
 
-        {/* Ruta para /dashboard/liquidaciones */}
-        <Route path="liquidaciones" element={<Liquidaciones />} />
+        <Route path="certificacion" element={
+          <RoleRoute check={can.verCertificacion}>
+            <Certificacion />
+          </RoleRoute>
+        } />
 
-        {/* Ruta para /dashboard/entidad-requirente */}
-        <Route path="entidad-requirente" element={<EntidadRequiriente />} />
+        <Route path="liquidaciones" element={
+          <RoleRoute check={can.verLiquidaciones}>
+            <Liquidaciones />
+          </RoleRoute>
+        } />
 
-        {/* Ruta para /dashboard/reportes */}
-        <Route path="reportes" element={<Reportes />} />
+        <Route path="unidad-requiriente" element={
+          <RoleRoute check={can.verEntidadRequiriente}>
+            <EntidadRequiriente />
+          </RoleRoute>
+        } />
 
-        {/* Ruta para /dashboard/auditoria */}
-        <Route path="auditoria" element={<Auditoria />} />
+        {/* Todos los roles */}
+        <Route path="reportes" element={
+          <RoleRoute check={can.verReportes}>
+            <Reportes />
+          </RoleRoute>
+        } />
+
+        {/* Solo Director y Admin */}
+        <Route path="auditoria" element={
+          <RoleRoute check={can.verAuditoria}>
+            <Auditoria />
+          </RoleRoute>
+        } />
 
         {/* Ruta por defecto del dashboard */}
-        <Route 
-          index 
-          element={<Inicio />}
-        />
+        <Route index element={<Inicio />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -94,5 +122,3 @@ function App() {
 }
 
 export default App;
-
-

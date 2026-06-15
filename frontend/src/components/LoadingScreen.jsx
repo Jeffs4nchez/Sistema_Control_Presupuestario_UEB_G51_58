@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import logo from '../assets/logo.png';
 
 export const LoadingScreen = ({ message = 'Iniciando sistema...' }) => {
   return (
@@ -47,30 +48,21 @@ export const LoadingScreen = ({ message = 'Iniciando sistema...' }) => {
 
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0' }}>
 
-        {/* Brand mark */}
+        {/* Logo */}
         <motion.div
           initial={{ scale: 0.6, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.6, type: 'spring', stiffness: 120 }}
-          style={{
-            width: '80px', height: '80px',
-            background: 'linear-gradient(135deg, #2e6ca4 0%, #54b3e0 100%)',
-            borderRadius: '22px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginBottom: '28px',
-            animation: 'pulseGlow 2.5s ease-in-out infinite',
-            boxShadow: '0 12px 40px rgba(46,108,164,0.45)',
-          }}
+          style={{ marginBottom: '28px', animation: 'floatUp 3s ease-in-out infinite' }}
         >
-          <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-            <rect x="6" y="28" width="7" height="10" rx="2" fill="rgba(255,255,255,0.9)" />
-            <rect x="18" y="20" width="7" height="18" rx="2" fill="rgba(255,255,255,0.75)" />
-            <rect x="30" y="12" width="7" height="26" rx="2" fill="rgba(255,255,255,0.6)" />
-            <path d="M9 26 L21 18 L33 10" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          <img
+            src={logo}
+            alt="Sicop"
+            style={{ width: '220px', filter: 'drop-shadow(0 8px 24px rgba(84,179,224,0.35))' }}
+          />
         </motion.div>
 
-        {/* Title */}
+        {/* Subtitle */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -78,11 +70,8 @@ export const LoadingScreen = ({ message = 'Iniciando sistema...' }) => {
           style={{ textAlign: 'center', marginBottom: '8px' }}
         >
           <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: 'rgba(84,179,224,0.75)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-            Universidad Estatal de Bolívar
+            Sistema de Control Presupuestario
           </p>
-          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
-            Control Presupuestario
-          </h2>
         </motion.div>
 
         {/* Spinner */}
