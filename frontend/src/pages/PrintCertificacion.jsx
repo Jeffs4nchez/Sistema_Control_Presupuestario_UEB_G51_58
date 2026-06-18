@@ -132,7 +132,14 @@ export default function PrintCertificacion({ certId, onClose }) {
               Vista previa — {cert.numero_certificado}
             </span>
             <div style={{display:'flex',gap:8}}>
-              <button onClick={()=>window.print()} style={BTNP}><Printer size={14}/> Imprimir</button>
+              <button onClick={() => {
+                const fechaFmt = fecha.fmt.replace(/\//g, '-')
+                const nombre = `UEB_Certificacion_Presupuestaria_${cert.numero_certificado}_${cert.estado}_${fechaFmt}`
+                const prev = document.title
+                document.title = nombre
+                window.print()
+                setTimeout(() => { document.title = prev }, 1000)
+              }} style={BTNP}><Printer size={14}/> Imprimir</button>
               <button onClick={onClose}             style={BTNC}><X       size={14}/> Cerrar</button>
             </div>
           </div>
@@ -153,7 +160,7 @@ export default function PrintCertificacion({ certId, onClose }) {
               padding:'10px 0',
               marginBottom:'12px',
             }}>
-              CERTIFICACION DE RECURSOS
+              CERTIFICACION DE RECURSOS-M
             </div>
 
             {/* ▌2. CONTENEDOR PRINCIPAL ▐ */}
@@ -165,7 +172,7 @@ export default function PrintCertificacion({ certId, onClose }) {
               {/* div: Institution / Sección / Memorando */}
               <div style={{border:BRD, flex:1}}>
                 <Row label="Institution:"  val="UNIVERSIDAD ESTATAL DE BOLIVAR" />
-                <Row label="Sección:"       val={cert.des_u_ejecutora||cert.unid_ejecutora||'-'} />
+                <Row label="Sección:"       val="PRESUPUESTO" />
                 <Row label="Memorando N.-"  val={cert.seccion_memorando||'-'} last />
               </div>
 
@@ -256,7 +263,7 @@ export default function PrintCertificacion({ certId, onClose }) {
               fontSize:'12px', letterSpacing:'1.5px',
               padding:'7px 0',
             }}>
-              CERTIFICACION DE RECURSOS
+              CERTIFICACION DE RECURSOS-M
             </div>
 
             {/* ▌6. TABLA DE ÍTEMS ▐ */}
@@ -316,7 +323,14 @@ export default function PrintCertificacion({ certId, onClose }) {
                   <td style={{border:BRD,width:'34%',textAlign:'center',fontWeight:'bold',fontSize:'13px',padding:'12px 7px'}}>APROBADO:</td>
                 </tr>
                 <tr>
-                  <td style={{border:BRD,height:'110px',verticalAlign:'bottom',padding:'8px 12px'}}>
+                  <td style={{border:BRD,height:'110px',verticalAlign:'bottom',padding:'8px 12px',position:'relative'}}>
+                    <div style={{
+                      position:'absolute',top:'10px',left:'12px',right:'12px',
+                      textAlign:'center',fontWeight:'bold',fontSize:'13px',
+                      letterSpacing:'1.5px',
+                    }}>
+                      APROBADO
+                    </div>
                     <div style={{fontWeight:'bold',fontSize:'10px'}}>FECHA:</div>
                     <div style={{fontSize:'10px',marginTop:'4px'}}>{fecha.fmt}</div>
                   </td>

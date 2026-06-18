@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Traits\EnviaCorreoHtml;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -11,6 +12,8 @@ use Carbon\Carbon;
 
 class AuthController extends Controller
 {
+    use EnviaCorreoHtml;
+
     /**
      * Login user and return token
      */
@@ -25,23 +28,56 @@ class AuthController extends Controller
 
         $user = User::where('correo_institucional', $request->email)->first();
 
-        \Log::info('User found', ['user' => $user ? 'YES' : 'NO']);
-
         if (!$user) {
-            \Log::warning('User not found for email: ' . $request->email);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Usuario no encontrado',
             ], 401);
         }
 
-        if (!Hash::check($request->password, $user->contrasena)) {
-            \Log::warning('Invalid password for user: ' . $request->email);
+        // Cuenta bloqueada por intentos fallidos
+        if (strtolower($user->estado) === 'bloqueado') {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Contraseña incorrecta',
+                'status'   => 'error',
+                'message'  => 'Tu cuenta está bloqueada por múltiples intentos fallidos. Contacta al administrador.',
+                'bloqueado' => true,
+            ], 403);
+        }
+
+        // Contraseña incorrecta — contar intentos
+        if (!Hash::check($request->password, $user->contrasena)) {
+            $user->intentos_fallidos = ($user->intentos_fallidos ?? 0) + 1;
+
+            if ($user->intentos_fallidos >= 3) {
+                $user->estado = 'bloqueado';
+                $user->save();
+                \Log::warning('Account blocked after 3 failed attempts: ' . $request->email);
+                return response()->json([
+                    'status'    => 'error',
+                    'message'   => 'Tu cuenta ha sido bloqueada por 3 intentos fallidos. Contacta al administrador.',
+                    'bloqueado' => true,
+                ], 403);
+            }
+
+            $user->save();
+            $restantes = 3 - $user->intentos_fallidos;
+            return response()->json([
+                'status'             => 'error',
+                'message'            => 'Contraseña incorrecta.',
+                'intentos_restantes' => $restantes,
             ], 401);
         }
+
+        // Cuenta inactiva (no bloqueada)
+        if (strtolower($user->estado) === 'inactivo') {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Tu cuenta está inactiva. Contacta al administrador.',
+            ], 403);
+        }
+
+        // Login correcto — resetear intentos fallidos
+        $user->intentos_fallidos = 0;
 
         // Generar token único
         $token = bin2hex(random_bytes(32));
@@ -118,6 +154,13 @@ class AuthController extends Controller
             ], 404);
         }
 
+        if (strtolower($user->estado) !== 'activo') {
+            $msg = strtolower($user->estado) === 'bloqueado'
+                ? 'Tu cuenta está bloqueada. Contacta al administrador.'
+                : 'Tu cuenta está inactiva. Contacta al administrador.';
+            return response()->json(['status' => 'error', 'message' => $msg, 'bloqueado' => strtolower($user->estado) === 'bloqueado'], 403);
+        }
+
         return response()->json([
             'status' => 'success',
             'user' => [
@@ -161,17 +204,27 @@ class AuthController extends Controller
         $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
         $resetUrl    = "{$frontendUrl}/restablecer-contrasena?token={$token}";
 
-        $body = "Hola {$user->nombres},\n\n"
-              . "Recibimos una solicitud para restablecer la contraseña de tu cuenta en el Sistema de Control Presupuestario UEB.\n\n"
-              . "Haz clic en el siguiente enlace para establecer una nueva contraseña (válido por 30 minutos):\n\n"
-              . $resetUrl . "\n\n"
-              . "Si no solicitaste este cambio, ignora este correo. Tu contraseña actual seguirá siendo la misma.\n\n"
-              . "Sistema de Control Presupuestario — UEB";
+        $asunto = 'Solicitud de Restablecimiento de Contraseña — Sistema de Control Presupuestario';
+
+        $cuerpo = "Estimado/a {$user->nombres},\n\n"
+            . "Hemos recibido una solicitud para restablecer la contraseña asociada a su cuenta "
+            . "en el Sistema de Control Presupuestario de la Universidad Estatal de Bolívar.\n\n"
+            . "Para establecer una nueva contraseña, le invitamos a hacer clic en el botón a continuación. "
+            . "Tenga en cuenta que este enlace es válido únicamente por 30 minutos a partir de este momento.\n\n"
+            . "Si usted no realizó esta solicitud, puede ignorar este mensaje con total tranquilidad. "
+            . "Su contraseña actual no sufrirá ningún cambio.\n\n"
+            . "Por razones de seguridad, no comparta este enlace con ninguna otra persona.\n\n"
+            . "Atentamente,\n"
+            . "Sistema de Control Presupuestario\n"
+            . "Universidad Estatal de Bolívar";
+
+        $extras = $this->botonAccion($resetUrl, 'Restablecer mi contraseña');
+        $html   = $this->plantillaHtml($asunto, $cuerpo, $extras);
 
         try {
-            Mail::raw($body, function ($message) use ($user) {
+            Mail::html($html, function ($message) use ($user, $asunto) {
                 $message->to($user->correo_institucional, $user->nombres)
-                        ->subject('Restablece tu contraseña — UEB');
+                        ->subject($asunto);
             });
         } catch (\Exception $e) {
             \Log::error('Error enviando email de recuperación: ' . $e->getMessage());

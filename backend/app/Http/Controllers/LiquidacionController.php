@@ -25,6 +25,15 @@ class LiquidacionController extends Controller
 
             if ($idCertItem) $query->where('id_certificacion_item', $idCertItem);
 
+            // Analista solo ve liquidaciones de sus propias certificaciones
+            $u = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+            if ($u && !in_array($u->cargo, $rolesDirector)) {
+                $query->whereHas('certificacionItem.certificacion', function ($q) use ($u) {
+                    $q->where('id_usuario', $u->id_usuario);
+                });
+            }
+
             $liquidaciones = $query->get();
 
             $totalLiquidado = $liquidaciones->where('estado', '!=', 'ANULADA')->sum('cantidad_liquidacion');
@@ -58,6 +67,11 @@ class LiquidacionController extends Controller
      */
     public function store(Request $request)
     {
+        $rolesOperativos = ['Director(a) financiero', 'Analista de presupuesto 1', 'Analista de presupuesto 3', 'Administrador del sistema'];
+        if (!in_array(Auth::user()?->cargo, $rolesOperativos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para registrar liquidaciones'], 403);
+        }
+
         $request->validate([
             'id_certificacion_item' => 'required|integer|exists:certificacion_items,id_certificacion_item',
             'cantidad_liquidacion'  => 'required|numeric|min:0.01|max:999999999999.99',
@@ -66,7 +80,15 @@ class LiquidacionController extends Controller
         ]);
 
         try {
-            $certItem = CertificacionItem::findOrFail($request->id_certificacion_item);
+            $certItem = CertificacionItem::with('certificacion')->findOrFail($request->id_certificacion_item);
+
+            $cert = $certItem->certificacion;
+            if (!$cert || !in_array($cert->estado, ['APROBADO', 'LIQUIDADO'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Solo se puede liquidar una certificación en estado APROBADO o LIQUIDADO.',
+                ], 422);
+            }
 
             $montoCertificado = (float) $certItem->monto;
 
@@ -153,6 +175,11 @@ class LiquidacionController extends Controller
      */
     public function destroy($id)
     {
+        $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema'];
+        if (!in_array(Auth::user()?->cargo, $rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para eliminar liquidaciones'], 403);
+        }
+
         try {
             $liquidacion = Liquidacion::findOrFail($id);
             $liquidacion->delete();
@@ -172,6 +199,11 @@ class LiquidacionController extends Controller
      */
     public function anular(Request $request, $id)
     {
+        $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema'];
+        if (!in_array(\Auth::user()?->cargo, $rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para anular liquidaciones'], 403);
+        }
+
         $request->validate([
             'motivo_anulacion' => 'required|string|max:255',
         ]);
@@ -267,6 +299,9 @@ class LiquidacionController extends Controller
     public function certificaciones(Request $request)
     {
         try {
+            $u             = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+
             $search   = $request->input('search', '');
             $idCedula = $request->input('id_cedula_presupuestaria', '');
 
@@ -288,7 +323,12 @@ class LiquidacionController extends Controller
                     'f.nombre_fuente'
                 )
                 ->where('ci.monto', '>', 0)
-                ->where('c.estado', '!=', 'ERRADO');
+                ->whereIn('c.estado', ['APROBADO', 'LIQUIDADO']);
+
+            // Analista y otros roles no-director solo ven sus propias certificaciones
+            if ($u && !in_array($u->cargo, $rolesDirector)) {
+                $query->where('c.id_usuario', $u->id_usuario);
+            }
 
             if ($idCedula) {
                 $query->where('c.id_cedula_presupuestaria', $idCedula);
@@ -349,6 +389,9 @@ class LiquidacionController extends Controller
     public function certificacionItems(Request $request)
     {
         try {
+            $u             = Auth::user();
+            $rolesDirector = ['Director(a) financiero', 'Analista de presupuesto 3', 'Administrador del sistema'];
+
             $search = $request->input('search', '');
             $page   = (int) $request->input('page', 1);
             $limit  = (int) $request->input('limit', 20);
@@ -372,7 +415,12 @@ class LiquidacionController extends Controller
                     'f.nombre_fuente'
                 )
                 ->where('ci.monto', '>', 0)
-                ->where('c.estado', '!=', 'ERRADO');
+                ->whereIn('c.estado', ['APROBADO', 'LIQUIDADO']);
+
+            // Analista y otros roles no-director solo ven sus propias certificaciones
+            if ($u && !in_array($u->cargo, $rolesDirector)) {
+                $query->where('c.id_usuario', $u->id_usuario);
+            }
 
             if ($search) {
                 $query->where(function ($q) use ($search) {

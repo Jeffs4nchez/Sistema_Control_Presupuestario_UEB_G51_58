@@ -3,269 +3,325 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use App\Models\Programa;
+use App\Models\Subprograma;
+use App\Models\Proyecto;
 use App\Models\Actividad;
-use App\Models\Item;
-use App\Models\Ubicacion;
+use App\Models\Geografica;
 use App\Models\FuenteFinanciamiento;
+use App\Models\Organismo;
+use App\Models\NaturalezaPrestacion;
+use App\Models\Item;
 
 class CedulaPresupuestariaController extends Controller
 {
     /**
-     * Cargar archivo CSV de cédula presupuestaria
-     * 
-     * Estructura esperada (21 columnas):
-     * DESCRIPCIONG1 (programa), DESCRIPCIONG2 (actividad), DESCRIPCIONG3 (fuente), 
-     * DESCRIPCIONG4 (ubicación), DESCRIPCIONG5 (item)
-     * 
-     * COL1-COL10, COL20 (valores financieros)
-     * 
-     * CODIGOG1 (programa), CODIGOG2 (actividad), CODIGOG3 (fuente), 
-     * CODIGOG4 (ubicación), CODIGOG5 (item)
+     * Cargar CSV unificado de cédula presupuestaria (29 columnas, delimitador coma).
+     * Construye la jerarquía presupuestaria y guarda los valores financieros en un solo paso.
+     *
+     * Columnas esperadas:
+     *   0-8  : DESCRIPCIONG1..9  (nombres de los 9 niveles)
+     *   9-18 : COL1..COL10       (valores; COL3=codificado, COL4=certificado y COL20=% no se guardan)
+     *   19   : COL20             (% ejecución, se ignora)
+     *   20-28: CODIGOG1..9       (códigos de los 9 niveles)
      */
     public function upload(Request $request)
     {
+        $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema'];
+        if (!in_array(Auth::user()?->cargo, $rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para cargar la cédula presupuestaria'], 403);
+        }
+
         $request->validate([
-            'csv_file' => 'required|file|mimes:csv,txt|max:10240'
+            'csv_file'                 => 'required|file|mimes:csv,txt|max:10240',
+            'id_cedula_presupuestaria' => 'nullable|integer|exists:cedula_presupuestaria,id_cedula_presupuestaria',
         ]);
 
-        try {
-            $file = $request->file('csv_file');
-            $content = $file->getContent();
-            $lines = explode("\n", $content);
-            
-            $processedCount = 0;
-            $insertCount = 0;
-            $updateCount = 0;
-            $validation_errors = [];
-            $debug_info = [];
-            $registros_guardados = [];  // Guardar todos los registros para mostrar
+        $idCedula = $request->input('id_cedula_presupuestaria');
+        if (!$idCedula) {
+            $cedActual = DB::table('cedula_presupuestaria')->where('anio', now()->year)->first();
+            $idCedula  = $cedActual?->id_cedula_presupuestaria;
+        }
 
-            foreach ($lines as $lineNum => $line) {
-                $rowNum = $lineNum + 1;
-                
-                // Saltar header y líneas vacías
-                if ($lineNum === 0 || empty(trim($line))) {
-                    continue;
-                }
+        try {
+            $file     = $request->file('csv_file');
+            $raw      = $file->getContent();
+            $encoding = mb_detect_encoding($raw, ['UTF-8', 'Windows-1252', 'ISO-8859-1', 'UTF-16'], true);
+            $content  = $encoding && $encoding !== 'UTF-8'
+                ? mb_convert_encoding($raw, 'UTF-8', $encoding)
+                : $raw;
+            $content = ltrim($content, "\xEF\xBB\xBF");
+            $content = str_replace("\r\n", "\n", str_replace("\r", "\n", $content));
+            $lines   = explode("\n", $content);
+
+            // ── FASE 1: Validar encabezado ──────────────────────────────────
+            if (count($lines) < 2) {
+                return response()->json(['success' => false, 'message' => 'El archivo está vacío o solo contiene el encabezado.'], 422);
+            }
+
+            // Auto-detectar delimitador: coma o punto y coma
+            $delimiter = substr_count($lines[0], ';') >= substr_count($lines[0], ',') ? ';' : ',';
+
+            $header    = str_getcsv($lines[0], $delimiter);
+            $headerStr = strtoupper(implode('|', array_map('trim', $header)));
+
+            if (!str_contains($headerStr, 'DESCRIPCIONG') || !str_contains($headerStr, 'CODIGOG')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Formato incorrecto: el encabezado no corresponde al CSV de Cédula Presupuestaria. Se esperan columnas DESCRIPCIONG1-9 y CODIGOG1-9.',
+                ], 422);
+            }
+
+            if (count($header) !== 29) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Formato incorrecto: el encabezado tiene ' . count($header) . ' columnas, se requieren exactamente 29.',
+                ], 422);
+            }
+
+            // ── FASE 2: Procesar filas ──────────────────────────────────────
+            $cache         = [];
+            $processedCount = 0;
+            $insertCount   = 0;
+            $updateCount   = 0;
+            $skippedCount  = 0;
+            $errors        = [];
+            $dataLines     = array_slice($lines, 1);
+            $totalDataRows = 0;
+
+            foreach ($dataLines as $idx => $line) {
+                $rowNum = $idx + 2;
+                if (empty(trim($line))) continue;
+                $totalDataRows++;
 
                 try {
-                    // PASO 1: Parsear CSV
-                    $row = str_getcsv($line, ';');
-                    
-                    if (count($row) !== 21) {
-                        $validation_errors[] = [
-                            'row' => $rowNum,
-                            'error' => 'Columnas: esperadas 21, encontradas ' . count($row)
-                        ];
+                    $row = str_getcsv($line, $delimiter);
+
+                    if (count($row) !== 29) {
+                        $errors[] = ['row' => $rowNum, 'error' => 'Columnas: esperadas 29, encontradas ' . count($row)];
+                        $skippedCount++;
                         continue;
                     }
 
-                    // PASO 2: Extraer códigos
-                    $codActividad = trim($row[17]);
-                    $codFuente = trim($row[18]);
-                    $codUbicacion = trim($row[19]);
-                    $codItem = trim($row[20]);
+                    // Descripciones (índices 0-8)
+                    $nomPrograma    = trim($row[0]);
+                    $nomSubprograma = trim($row[1]);
+                    $nomProyecto    = trim($row[2]);
+                    $nomActividad   = trim($row[3]);
+                    $nomItem        = trim($row[4]);
+                    $nomUbicacion   = trim($row[5]);
+                    $nomFuente      = trim($row[6]);
+                    $nomOrganismo   = trim($row[7]);
+                    $nomNaturaleza  = trim($row[8]);
 
-                    // PASO 3: Parsear valores financieros
-                    $asignado = $this->parseDecimal($row[5]);
-                    $modificado = $this->parseDecimal($row[6]);
-                    $comprometido = $this->parseDecimal($row[9]);
-                    $devengado = $this->parseDecimal($row[10]);
-                    $pagado = $this->parseDecimal($row[11]);
-                    $por_comprometer = $this->parseDecimal($row[12]);
-                    $por_devengar = $this->parseDecimal($row[13]);
-                    $por_pagar = $this->parseDecimal($row[14]);
+                    // Valores financieros: COL1=9, COL2=10, (COL3=11 codificado y COL4=12 certificado se ignoran),
+                    // COL5=13, COL6=14, COL7=15, COL8=16, COL9=17, COL10=18, (COL20=19 se ignora)
+                    $asignado        = $this->parseDecimal($row[9]);
+                    $modificado      = $this->parseDecimal($row[10]);
+                    $comprometido    = $this->parseDecimal($row[13]);
+                    $devengado       = $this->parseDecimal($row[14]);
+                    $pagado          = $this->parseDecimal($row[15]);
+                    $por_comprometer = $this->parseDecimal($row[16]);
+                    $por_devengar    = $this->parseDecimal($row[17]);
+                    $por_pagar       = $this->parseDecimal($row[18]);
 
-                    // PASO 4: Buscar Actividad
-                    $actividad = Actividad::where('cod_actividad', $codActividad)->first();
-                    if (!$actividad) {
-                        $validation_errors[] = [
-                            'row' => $rowNum,
-                            'error' => "Actividad '$codActividad' NO EXISTE"
-                        ];
+                    // Códigos (índices 20-28)
+                    $codPrograma    = trim($row[20]);
+                    $codSubprograma = trim($row[21]);
+                    $codProyecto    = trim($row[22]);
+                    $codActividad   = trim($row[23]);
+                    $codItem        = trim($row[24]);
+                    $codUbicacion   = trim($row[25]);
+                    $codFuente      = trim($row[26]);
+                    $codOrganismo   = trim($row[27]);
+                    $codNaturaleza  = trim($row[28]);
+
+                    // Restaurar ceros a la izquierda
+                    if (is_numeric($codPrograma))   $codPrograma   = str_pad($codPrograma,   2, '0', STR_PAD_LEFT);
+                    if (is_numeric($codItem))        $codItem       = str_pad($codItem,       6, '0', STR_PAD_LEFT);
+                    if (is_numeric($codUbicacion))   $codUbicacion  = str_pad($codUbicacion,  4, '0', STR_PAD_LEFT);
+                    if (is_numeric($codFuente))      $codFuente     = str_pad($codFuente,     3, '0', STR_PAD_LEFT);
+                    if (is_numeric($codOrganismo))   $codOrganismo  = str_pad($codOrganismo,  4, '0', STR_PAD_LEFT);
+                    if (is_numeric($codNaturaleza))  $codNaturaleza = str_pad($codNaturaleza, 4, '0', STR_PAD_LEFT);
+
+                    // Validar códigos obligatorios
+                    $vacios = array_filter([
+                        $codPrograma    === '' ? 'CODIGOG1' : null,
+                        $codSubprograma === '' ? 'CODIGOG2' : null,
+                        $codProyecto    === '' ? 'CODIGOG3' : null,
+                        $codActividad   === '' ? 'CODIGOG4' : null,
+                        $codItem        === '' ? 'CODIGOG5' : null,
+                        $codUbicacion   === '' ? 'CODIGOG6' : null,
+                        $codFuente      === '' ? 'CODIGOG7' : null,
+                        $codOrganismo   === '' ? 'CODIGOG8' : null,
+                        $codNaturaleza  === '' ? 'CODIGOG9' : null,
+                    ]);
+                    if (!empty($vacios)) {
+                        $errors[] = ['row' => $rowNum, 'error' => 'Campos vacíos: ' . implode(', ', $vacios)];
+                        $skippedCount++;
                         continue;
                     }
 
-                    // PASO 5: Buscar Ubicación
-                    $ubicacion = Ubicacion::where('cod_ubicacion', $codUbicacion)->first();
-                    if (!$ubicacion) {
-                        $validation_errors[] = [
-                            'row' => $rowNum,
-                            'error' => "Ubicación '$codUbicacion' NO EXISTE"
-                        ];
-                        continue;
+                    // 1. Programa
+                    $ck = "prog_$codPrograma";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = Programa::firstOrCreate(
+                            ['cod_programa' => $codPrograma],
+                            ['nombre_programa' => $nomPrograma]
+                        )->id_programa;
                     }
+                    $idPrograma = $cache[$ck];
 
-                    // PASO 6: Buscar Fuente
-                    $fuente = FuenteFinanciamiento::where('cod_fuente', $codFuente)->first();
-                    if (!$fuente) {
-                        $validation_errors[] = [
-                            'row' => $rowNum,
-                            'error' => "Fuente '$codFuente' NO EXISTE"
-                        ];
-                        continue;
+                    // 2. Subprograma
+                    $ck = "sub_{$codPrograma}_{$codSubprograma}";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = Subprograma::firstOrCreate(
+                            ['cod_subprograma' => $codSubprograma, 'id_programa' => $idPrograma],
+                            ['nombre_subprograma' => $nomSubprograma, 'id_programa' => $idPrograma]
+                        )->id_subprograma;
                     }
+                    $idSubprograma = $cache[$ck];
 
-                    // PASO 7: Buscar Item
-                    $item = Item::where('cod_item', $codItem)
-                        ->where('id_actividad', $actividad->id_actividad)
-                        ->where('id_ubicacion', $ubicacion->id_ubicacion)
-                        ->first();
-                    
-                    if (!$item) {
-                        $validation_errors[] = [
-                            'row' => $rowNum,
-                            'error' => "Item '$codItem' NO EXISTE para Actividad {$actividad->id_actividad} + Ubicación {$ubicacion->id_ubicacion}"
-                        ];
-                        continue;
+                    // 3. Proyecto
+                    $ck = "proy_{$codSubprograma}_{$codProyecto}";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = Proyecto::firstOrCreate(
+                            ['cod_proyecto' => $codProyecto, 'id_subprograma' => $idSubprograma],
+                            ['nombre_proyecto' => $nomProyecto, 'id_subprograma' => $idSubprograma]
+                        )->id_proyecto;
                     }
+                    $idProyecto = $cache[$ck];
 
-                    // PASO 8: Verificar si el par (id_item, id_fuente) YA EXISTE en fuente_items
-                    $fuenteItemExistente = \DB::table('fuente_items')
-                        ->where('id_item', $item->id_item)
-                        ->where('id_fuente', $fuente->id_fuente)
-                        ->first();
+                    // 4. Actividad
+                    $ck = "act_{$codProyecto}_{$codActividad}";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = Actividad::firstOrCreate(
+                            ['cod_actividad' => $codActividad, 'id_proyecto' => $idProyecto],
+                            ['nombre_actividad' => $nomActividad, 'id_proyecto' => $idProyecto]
+                        )->id_actividad;
+                    }
+                    $idActividad = $cache[$ck];
 
-                    if ($fuenteItemExistente) {
-                        // YA EXISTE: ACTUALIZAR solo los valores financieros
-                        \DB::table('fuente_items')
-                            ->where('id_item', $item->id_item)
-                            ->where('id_fuente', $fuente->id_fuente)
-                            ->update([
-                                'asignado' => $asignado,
-                                'modificado' => $modificado,
-                                'comprometido' => $comprometido,
-                                'devengado' => $devengado,
-                                'pagado' => $pagado,
-                                'por_comprometer' => $por_comprometer,
-                                'por_devengar' => $por_devengar,
-                                'por_pagar' => $por_pagar,
-                                'updated_at' => now(),
-                            ]);
+                    // 5. Ubicación
+                    $ck = "ubic_$codUbicacion";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = Geografica::firstOrCreate(
+                            ['cod_ubicacion' => $codUbicacion],
+                            ['nombre_ubicacion' => $nomUbicacion]
+                        )->id_ubicacion;
+                    }
+                    $idUbicacion = $cache[$ck];
 
-                        // Traer el registro completo actualizado
-                        $registroCompleto = \DB::table('fuente_items')
-                            ->leftJoin('items', 'fuente_items.id_item', '=', 'items.id_item')
-                            ->leftJoin('fuente_financiamiento', 'fuente_items.id_fuente', '=', 'fuente_financiamiento.id_fuente')
-                            ->leftJoin('actividad', 'items.id_actividad', '=', 'actividad.id_actividad')
-                            ->leftJoin('proyecto', 'actividad.id_proyecto', '=', 'proyecto.id_proyecto')
-                            ->leftJoin('subprograma', 'proyecto.id_subprograma', '=', 'subprograma.id_subprograma')
-                            ->leftJoin('programa', 'subprograma.id_programa', '=', 'programa.id_programa')
-                            ->leftJoin('ubicacion', 'items.id_ubicacion', '=', 'ubicacion.id_ubicacion')
-                            ->where('fuente_items.id_item', $item->id_item)
-                            ->where('fuente_items.id_fuente', $fuente->id_fuente)
-                            ->select(
-                                'items.id_item',
-                                'items.cod_item',
-                                'items.nombre_item',
-                                'programa.cod_programa',
-                                'actividad.cod_actividad',
-                                'fuente_financiamiento.cod_fuente',
-                                'ubicacion.cod_ubicacion',
-                                'fuente_items.asignado',
-                                'fuente_items.modificado',
-                                'fuente_items.comprometido',
-                                'fuente_items.devengado',
-                                'fuente_items.pagado',
-                                'fuente_items.por_comprometer',
-                                'fuente_items.por_devengar',
-                                'fuente_items.por_pagar',
-                                'fuente_items.updated_at'
-                            )
-                            ->first();
+                    // 6. Fuente
+                    $ck = "fte_$codFuente";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = FuenteFinanciamiento::firstOrCreate(
+                            ['cod_fuente' => $codFuente],
+                            ['nombre_fuente' => $nomFuente]
+                        )->id_fuente;
+                    }
+                    $idFuente = $cache[$ck];
 
-                        $registros_guardados[] = (array) $registroCompleto;
+                    // 7. Organismo
+                    $ck = "org_$codOrganismo";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = Organismo::firstOrCreate(
+                            ['cod_organismo' => $codOrganismo],
+                            ['nombre_organismo' => $nomOrganismo]
+                        )->id_organismo;
+                    }
+                    $idOrganismo = $cache[$ck];
 
+                    // 8. Naturaleza Prestación
+                    $ck = "nat_{$codOrganismo}_{$codNaturaleza}";
+                    if (!isset($cache[$ck])) {
+                        $cache[$ck] = NaturalezaPrestacion::firstOrCreate(
+                            ['cod_naturaleza' => $codNaturaleza, 'id_organismo' => $idOrganismo],
+                            ['nombre_naturaleza' => $nomNaturaleza, 'id_organismo' => $idOrganismo]
+                        )->id_naturaleza;
+                    }
+                    $idNaturaleza = $cache[$ck];
+
+                    // 9. Ítem
+                    $item = Item::firstOrCreate(
+                        [
+                            'cod_item'     => $codItem,
+                            'id_actividad' => $idActividad,
+                            'id_ubicacion' => $idUbicacion,
+                            'id_organismo' => $idOrganismo,
+                            'id_naturaleza' => $idNaturaleza,
+                        ],
+                        [
+                            'nombre_item'  => $nomItem,
+                            'id_actividad' => $idActividad,
+                            'id_ubicacion' => $idUbicacion,
+                            'id_organismo' => $idOrganismo,
+                            'id_naturaleza' => $idNaturaleza,
+                        ]
+                    );
+
+                    // 10. Relación Actividad-Fuente
+                    DB::table('actividad_fuente')->updateOrInsert(
+                        ['id_actividad' => $idActividad, 'id_fuente' => $idFuente],
+                        ['created_at' => now(), 'updated_at' => now()]
+                    );
+
+                    // 11. fuente_items con valores financieros (insert o update)
+                    $financials = [
+                        'asignado'        => $asignado,
+                        'modificado'      => $modificado,
+                        'comprometido'    => $comprometido,
+                        'devengado'       => $devengado,
+                        'pagado'          => $pagado,
+                        'por_comprometer' => $por_comprometer,
+                        'por_devengar'    => $por_devengar,
+                        'por_pagar'       => $por_pagar,
+                        'updated_at'      => now(),
+                    ];
+
+                    $existe = DB::table('fuente_items')
+                        ->where('id_item',                  $item->id_item)
+                        ->where('id_fuente',                $idFuente)
+                        ->where('id_cedula_presupuestaria', $idCedula)
+                        ->exists();
+
+                    if ($existe) {
+                        DB::table('fuente_items')
+                            ->where('id_item',                  $item->id_item)
+                            ->where('id_fuente',                $idFuente)
+                            ->where('id_cedula_presupuestaria', $idCedula)
+                            ->update($financials);
                         $updateCount++;
-                        $debug_info[] = [
-                            'row' => $rowNum,
-                            'status' => 'UPDATED',
-                            'id_item' => $item->id_item,
-                            'id_fuente' => $fuente->id_fuente,
-                            'item_code' => $codItem,
-                            'asignado' => $asignado
-                        ];
                     } else {
-                        // NO EXISTE: INSERTAR nuevo registro
-                        \DB::table('fuente_items')->insert([
-                            'id_item' => $item->id_item,
-                            'id_fuente' => $fuente->id_fuente,
-                            'asignado' => $asignado,
-                            'modificado' => $modificado,
-                            'comprometido' => $comprometido,
-                            'devengado' => $devengado,
-                            'pagado' => $pagado,
-                            'por_comprometer' => $por_comprometer,
-                            'por_devengar' => $por_devengar,
-                            'por_pagar' => $por_pagar,
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-
-                        // Traer el registro completo insertado
-                        $registroCompleto = \DB::table('fuente_items')
-                            ->leftJoin('items', 'fuente_items.id_item', '=', 'items.id_item')
-                            ->leftJoin('fuente_financiamiento', 'fuente_items.id_fuente', '=', 'fuente_financiamiento.id_fuente')
-                            ->leftJoin('actividad', 'items.id_actividad', '=', 'actividad.id_actividad')
-                            ->leftJoin('proyecto', 'actividad.id_proyecto', '=', 'proyecto.id_proyecto')
-                            ->leftJoin('subprograma', 'proyecto.id_subprograma', '=', 'subprograma.id_subprograma')
-                            ->leftJoin('programa', 'subprograma.id_programa', '=', 'programa.id_programa')
-                            ->leftJoin('ubicacion', 'items.id_ubicacion', '=', 'ubicacion.id_ubicacion')
-                            ->where('fuente_items.id_item', $item->id_item)
-                            ->where('fuente_items.id_fuente', $fuente->id_fuente)
-                            ->select(
-                                'items.id_item',
-                                'items.cod_item',
-                                'items.nombre_item',
-                                'programa.cod_programa',
-                                'actividad.cod_actividad',
-                                'fuente_financiamiento.cod_fuente',
-                                'ubicacion.cod_ubicacion',
-                                'fuente_items.asignado',
-                                'fuente_items.modificado',
-                                'fuente_items.comprometido',
-                                'fuente_items.devengado',
-                                'fuente_items.pagado',
-                                'fuente_items.por_comprometer',
-                                'fuente_items.por_devengar',
-                                'fuente_items.por_pagar',
-                                'fuente_items.updated_at'
-                            )
-                            ->first();
-
-                        $registros_guardados[] = (array) $registroCompleto;
-
+                        DB::table('fuente_items')->insert(array_merge($financials, [
+                            'id_item'                  => $item->id_item,
+                            'id_fuente'                => $idFuente,
+                            'id_cedula_presupuestaria' => $idCedula,
+                            'created_at'               => now(),
+                        ]));
                         $insertCount++;
-                        $debug_info[] = [
-                            'row' => $rowNum,
-                            'status' => 'INSERTED',
-                            'id_item' => $item->id_item,
-                            'id_fuente' => $fuente->id_fuente,
-                            'item_code' => $codItem,
-                            'asignado' => $asignado
-                        ];
                     }
 
                     $processedCount++;
 
                 } catch (\Exception $e) {
-                    $validation_errors[] = [
-                        'row' => $rowNum,
-                        'error' => 'Exception: ' . $e->getMessage()
-                    ];
+                    $errors[] = ['row' => $rowNum, 'error' => 'Error interno: ' . $e->getMessage()];
+                    $skippedCount++;
                 }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => "Procesadas $processedCount filas. $insertCount insertadas, $updateCount actualizadas. " . count($validation_errors) . " errores.",
+                'message' => "$processedCount de $totalDataRows filas procesadas. $insertCount nuevas, $updateCount actualizadas, $skippedCount omitidas.",
                 'data' => [
+                    'total_rows'      => $totalDataRows,
                     'processed_count' => $processedCount,
-                    'insert_count' => $insertCount,
-                    'update_count' => $updateCount,
-                    'total_rows' => count(array_filter($lines)),
-                    'errors' => array_slice($validation_errors, 0, 10),
-                    'registros' => $registros_guardados  // TODOS los registros insertados/actualizados en orden
+                    'insert_count'    => $insertCount,
+                    'update_count'    => $updateCount,
+                    'skipped'         => $skippedCount,
+                    'errors'          => array_slice($errors, 0, 20),
                 ]
             ], 200);
 

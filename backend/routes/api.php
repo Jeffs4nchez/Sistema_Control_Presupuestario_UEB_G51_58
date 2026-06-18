@@ -30,21 +30,15 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
-// Rutas de Estructura Presupuestaria (públicas por ahora)
-Route::post('/estructura-presupuestaria/upload', [EstructuraPresupuestariaController::class, 'upload']);
-Route::get('/estructura-presupuestaria/summary', [EstructuraPresupuestariaController::class, 'summary']);
-Route::get('/estructura-presupuestaria/data', [EstructuraPresupuestariaController::class, 'getData']);
-
-// Rutas de Cédula Presupuestaria (módulo separado)
-Route::post('/cedula-presupuestaria/upload', [CedulaPresupuestariaController::class, 'upload']);
-Route::get('/cedula-presupuestaria/summary', [CedulaPresupuestariaController::class, 'summary']);
-Route::get('/cedula-presupuestaria/data', [CedulaPresupuestariaController::class, 'getData']);
+// Rutas de Certificación - Datos para cascadas (públicas para el frontend)
+// NOTA: estas se mantienen públicas porque el formulario de creación las necesita
 
 // Rutas de Certificación - Datos para cascadas (públicas para el frontend)
 Route::get('/certificacion/programas', [CertificacionController::class, 'getProgramas']);
 Route::get('/certificacion/subprogramas/{idPrograma}', [CertificacionController::class, 'getSubprogramas']);
 Route::get('/certificacion/proyectos/{idSubprograma}', [CertificacionController::class, 'getProyectos']);
 Route::get('/certificacion/actividades/{idProyecto}', [CertificacionController::class, 'getActividades']);
+Route::get('/certificacion/items-by-actividad-fuente/{idActividad}', [CertificacionController::class, 'getItemsByActividadFuente']);
 Route::get('/certificacion/fuentes', [CertificacionController::class, 'getFuentes']);
 Route::get('/certificacion/fuentes/{idActividad}', [CertificacionController::class, 'getFuentesByActividad']);
 Route::get('/certificacion/ubicaciones/{idActividad}', [CertificacionController::class, 'getUbicaciones']);
@@ -52,7 +46,7 @@ Route::get('/certificacion/items/{idActividad}/{idUbicacion}', [CertificacionCon
 Route::get('/certificacion/items/{idActividad}/{idUbicacion}/{idFuente}', [CertificacionController::class, 'getItemsByFuente']);
 Route::get('/certificacion/organismos', [CertificacionController::class, 'getOrganismos']);
 Route::get('/certificacion/naturalezas', [CertificacionController::class, 'getNaturalezas']);
-Route::get('/certificacion/entidades-requirientes', [CertificacionController::class, 'getEntidadesRequirientes']);
+Route::get('/certificacion/unidades-requirientes', [CertificacionController::class, 'getEntidadesRequirientes']);
 Route::get('/certificacion/cedulas-presupuestarias', [CertificacionController::class, 'getCedulasPresupuestarias']);
 Route::get('/certificacion/cedula-actual', [CertificacionController::class, 'getCedulaActual']);
 Route::get('/certificacion/verificar-monto/{idItem}/{idFuente}', [CertificacionController::class, 'verificarMontoDisponible']);
@@ -65,6 +59,22 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Estructura Presupuestaria — solo Director/Admin
+    Route::middleware('check.role:directores')->group(function () {
+        Route::post('/estructura-presupuestaria/upload', [EstructuraPresupuestariaController::class, 'upload']);
+        Route::get('/estructura-presupuestaria/summary', [EstructuraPresupuestariaController::class, 'summary']);
+        Route::get('/estructura-presupuestaria/data', [EstructuraPresupuestariaController::class, 'getData']);
+    });
+
+    // Cédula Presupuestaria — upload solo Director/Admin; lectura para todos los roles
+    Route::middleware('check.role:directores')->post('/cedula-presupuestaria/upload', [CedulaPresupuestariaController::class, 'upload']);
+    Route::get('/cedula-presupuestaria/summary', [CedulaPresupuestariaController::class, 'summary']);
+    Route::get('/cedula-presupuestaria/data', [CedulaPresupuestariaController::class, 'getData']);
+
+    // Presupuesto disponible (HU-09)
+    Route::get('/presupuesto-disponible', [PresupuestoController::class, 'index']);
+    Route::get('/presupuesto/certificaciones-por-item', [PresupuestoController::class, 'certificacionesPorItem']);
     
     // Rutas CRUD de Usuarios
     Route::get('/usuarios', [UserController::class, 'index']);
@@ -72,6 +82,7 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::get('/usuarios/{id}', [UserController::class, 'show']);
     Route::put('/usuarios/{id}', [UserController::class, 'update']);
     Route::delete('/usuarios/{id}', [UserController::class, 'destroy']);
+    Route::post('/usuarios/{id}/desbloquear', [UserController::class, 'desbloquear']);
     
     // Rutas CRUD de Certificación
     Route::get('/certificacion', [CertificacionController::class, 'index']);
@@ -85,8 +96,14 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::patch('/certificacion/{idCertificacion}/item/{idItem}', [CertificacionController::class, 'actualizarItem']);
     Route::delete('/certificacion/{idCertificacion}/item/{idItem}', [CertificacionController::class, 'removerItem']);
 
-    // Rutas para crear entidades requirientes y cédulas
-    Route::post('/certificacion/entidades-requirientes', [CertificacionController::class, 'createEntidadRequiriente']);
+    // Rutas de flujo de aprobación (director/analista)
+    Route::patch('/certificacion/{id}/aprobar',  [CertificacionController::class, 'aprobar']);
+    Route::patch('/certificacion/{id}/rechazar', [CertificacionController::class, 'rechazar']);
+    Route::patch('/certificacion/{id}/reenviar', [CertificacionController::class, 'reenviar']);
+    Route::patch('/certificacion/{id}/errar',    [CertificacionController::class, 'errar']);
+
+    // Rutas para crear unidades requirientes y cédulas
+    Route::post('/certificacion/unidades-requirientes', [CertificacionController::class, 'createEntidadRequiriente']);
     Route::post('/certificacion/cedulas-presupuestarias', [CertificacionController::class, 'createCedulaPresupuestaria']);
 
     // Rutas de Liquidaciones
@@ -97,12 +114,12 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::delete('/liquidaciones/{id}',             [LiquidacionController::class, 'destroy']);
     Route::patch('/liquidaciones/{id}/anular',       [LiquidacionController::class, 'anular']);
 
-    // Rutas de Entidades Requirientes (HU-08)
-    Route::get('/entidades-requirientes',            [EntidadRequirienteController::class, 'index']);
-    Route::post('/entidades-requirientes',           [EntidadRequirienteController::class, 'store']);
-    Route::get('/entidades-requirientes/{id}',       [EntidadRequirienteController::class, 'show']);
-    Route::put('/entidades-requirientes/{id}',       [EntidadRequirienteController::class, 'update']);
-    Route::delete('/entidades-requirientes/{id}',    [EntidadRequirienteController::class, 'destroy']);
+    // Rutas de Unidades Requirientes (HU-08)
+    Route::get('/unidades-requirientes',            [EntidadRequirienteController::class, 'index']);
+    Route::post('/unidades-requirientes',           [EntidadRequirienteController::class, 'store']);
+    Route::get('/unidades-requirientes/{id}',       [EntidadRequirienteController::class, 'show']);
+    Route::put('/unidades-requirientes/{id}',       [EntidadRequirienteController::class, 'update']);
+    Route::delete('/unidades-requirientes/{id}',    [EntidadRequirienteController::class, 'destroy']);
 
     // Rutas de Reportes CSV (HU-15)
     Route::get('/reportes/certificaciones/csv',      [ReporteController::class, 'certificacionesCsv']);
@@ -119,9 +136,6 @@ Route::middleware('validate.custom.token')->group(function () {
     Route::get('/reportes/auditoria/csv',            [ReporteController::class, 'auditoriaCsv']);
     Route::get('/reportes/auditoria/json',           [ReporteController::class, 'auditoriaJson']);
 });
-
-// Presupuesto disponible (HU-09) - público para el frontend
-Route::get('/presupuesto-disponible', [PresupuestoController::class, 'index']);
 
 // Ruta de prueba - Hola Mundo
 Route::get('/hola-mundo', function () {

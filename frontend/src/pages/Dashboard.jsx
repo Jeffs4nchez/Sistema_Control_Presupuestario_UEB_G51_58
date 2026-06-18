@@ -1,59 +1,124 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { can } from '../utils/permissions';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, LogOut, TrendingUp, FileText,
-  CheckCircle2, Menu, ChevronLeft, ChevronRight, BarChart2, KeyRound,
-  Building2, FileDown, Clock, X,
+  CheckCircle2, Menu, ChevronLeft, ChevronRight, KeyRound,
+  Building2, FileDown, Clock, X, AlertTriangle, Info, Banknote, BarChart2,
 } from 'lucide-react';
 import CambiarContrasenaModal from '../components/CambiarContrasenaModal';
 import { useFiscalYear } from '../contexts/FiscalYearContext';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo.webp';
 
 const SIDEBAR_W_OPEN     = '264px';
 const SIDEBAR_W_COLLAPSED = '64px';
 
-const menuGroups = [
-  {
+const buildMenuGroups = (user, isReadOnly = false) => {
+  const groups = [];
+
+  groups.push({
     label: 'Principal',
-    items: [
-      { label: 'Inicio',                    path: '/dashboard',                                  icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: 'Presupuesto',
-    items: [
-      { label: 'Estructura Presupuestaria', path: '/dashboard/estructura-presupuestaria',         icon: FileText },
-      { label: 'Cédula Presupuestaria',     path: '/dashboard/cedula-presupuestaria',             icon: CheckCircle2 },
-    ],
-  },
-  {
-    label: 'Operaciones',
-    items: [
-      { label: 'Certificación',             path: '/dashboard/certificacion',                    icon: TrendingUp },
-      { label: 'Liquidaciones',             path: '/dashboard/liquidaciones',                    icon: BarChart2 },
-      { label: 'Entidad Requirente',        path: '/dashboard/entidad-requirente',               icon: Building2 },
-    ],
-  },
-  {
-    label: 'Administración',
-    items: [
-      { label: 'Gestión de Usuarios',       path: '/dashboard/usuarios',                         icon: Users },
-      { label: 'Reportes',                  path: '/dashboard/reportes',                         icon: FileDown },
-      { label: 'Auditoría',                 path: '/dashboard/auditoria',                        icon: Clock },
-    ],
-  },
-];
+    items: [{ label: 'Inicio', path: '/dashboard', icon: LayoutDashboard }],
+  });
+
+  if (isReadOnly) {
+    // Año anterior: solo consulta — no se puede modificar estructura, entidades ni usuarios
+    const presupuesto = [];
+    if (can.verCedula(user))
+      presupuesto.push({ label: 'Cédula Presupuestaria', path: '/dashboard/cedula-presupuestaria', icon: CheckCircle2 });
+    if (presupuesto.length) groups.push({ label: 'Presupuesto', items: presupuesto });
+
+    const ops = [];
+    if (can.verCertificacion(user))
+      ops.push({ label: 'Certificación',  path: '/dashboard/certificacion',  icon: TrendingUp });
+    if (can.verLiquidaciones(user))
+      ops.push({ label: 'Liquidaciones',  path: '/dashboard/liquidaciones',  icon: BarChart2 });
+    if (ops.length) groups.push({ label: 'Operaciones', items: ops });
+
+    const admin = [];
+    if (can.verReportes(user))
+      admin.push({ label: 'Reportes',  path: '/dashboard/reportes',  icon: FileDown });
+    if (can.verAuditoria(user))
+      admin.push({ label: 'Auditoría', path: '/dashboard/auditoria', icon: Clock });
+    if (admin.length) groups.push({ label: 'Administración', items: admin });
+
+    return groups;
+  }
+
+  // Año actual: menú completo
+  const presupuesto = [];
+  if (can.verCedula(user))
+    presupuesto.push({ label: 'Cédula Presupuestaria', path: '/dashboard/cedula-presupuestaria', icon: CheckCircle2 });
+  if (presupuesto.length) groups.push({ label: 'Presupuesto', items: presupuesto });
+
+  const ops = [];
+  if (can.verCertificacion(user))
+    ops.push({ label: 'Certificación',      path: '/dashboard/certificacion',      icon: TrendingUp });
+  if (can.verLiquidaciones(user))
+    ops.push({ label: 'Liquidaciones',      path: '/dashboard/liquidaciones',      icon: Banknote });
+  if (can.verEntidadRequiriente(user))
+    ops.push({ label: 'Unidad Requiriente', path: '/dashboard/unidad-requiriente', icon: Building2 });
+  if (ops.length) groups.push({ label: 'Operaciones', items: ops });
+
+  const admin = [];
+  if (can.verUsuarios(user))
+    admin.push({ label: 'Gestión de Usuarios', path: '/dashboard/usuarios',  icon: Users });
+  if (can.verReportes(user))
+    admin.push({ label: 'Reportes',            path: '/dashboard/reportes',  icon: FileDown });
+  if (can.verAuditoria(user))
+    admin.push({ label: 'Auditoría',           path: '/dashboard/auditoria', icon: Clock });
+  if (admin.length) groups.push({ label: 'Administración', items: admin });
+
+  return groups;
+};
+
+const abreviarCargo = (cargo) => {
+  if (!cargo) return '';
+  if (cargo.includes('Analista de presupuesto 1')) return 'Analista 1';
+  if (cargo.includes('Analista de presupuesto 3')) return 'Analista 3';
+  if (cargo.includes('Director(a) financiero'))    return 'Dir. Financiero';
+  if (cargo.includes('Director(a) de talento'))    return 'Dir. T. Humano';
+  if (cargo.includes('Rector'))                    return 'Rector';
+  if (cargo.includes('Administrador'))             return 'Administrador';
+  return cargo;
+};
 
 export const Dashboard = () => {
   const navigate  = useNavigate();
   const location  = useLocation();
   const { user, logout, token } = useAuth();
   const { cedulas, selectedCedula, isReadOnly, changeCedula } = useFiscalYear();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showUserPanel, setShowUserPanel] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  const aboutRef = useRef(null);
+  const userPanelRef = useRef(null);
+
+  useEffect(() => {
+    if (!showUserPanel) return;
+    const handleClickOutside = (e) => {
+      if (userPanelRef.current && !userPanelRef.current.contains(e.target)) {
+        setShowUserPanel(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserPanel]);
+
+  useEffect(() => {
+    if (!showAbout) return;
+    const handleClickOutside = (e) => {
+      if (aboutRef.current && !aboutRef.current.contains(e.target)) {
+        setShowAbout(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAbout]);
 
   useEffect(() => {
     if (!token) navigate('/login');
@@ -82,6 +147,8 @@ export const Dashboard = () => {
 
   const SW = isMobile ? '0px' : sidebarOpen ? SIDEBAR_W_OPEN : SIDEBAR_W_COLLAPSED;
   const sidebarVisible = !isMobile || sidebarOpen;
+
+  const menuGroups = buildMenuGroups(user, isReadOnly);
 
   const pageTitle = (() => {
     const allItems = menuGroups.flatMap(g => g.items);
@@ -141,14 +208,11 @@ export const Dashboard = () => {
       </AnimatePresence>
 
       {/* ── SIDEBAR ────────────────────────────────────────────────── */}
-      <motion.aside
-        initial={false}
-        animate={{
-          width: sidebarVisible ? (sidebarOpen ? 264 : 64) : 0,
-          minWidth: sidebarVisible ? (sidebarOpen ? 264 : 64) : 0,
-        }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+      <aside
         style={{
+          width: sidebarVisible ? (sidebarOpen ? '264px' : '64px') : '0px',
+          minWidth: sidebarVisible ? (sidebarOpen ? '264px' : '64px') : '0px',
+          transition: 'width 0.3s cubic-bezier(0.4,0,0.2,1), min-width 0.3s cubic-bezier(0.4,0,0.2,1)',
           background: 'linear-gradient(180deg, #0a1929 0%, #1a3a5c 100%)',
           borderRight: '1px solid rgba(84,179,224,0.10)',
           display: 'flex',
@@ -162,60 +226,58 @@ export const Dashboard = () => {
           flexShrink: 0,
         }}
       >
-        {/* Logo area */}
+        {/* Logo area + botón colapso */}
         <div style={{
-          padding: sidebarOpen ? '20px 20px 16px' : '16px 12px',
+          padding: '12px 10px',
           borderBottom: '1px solid rgba(84,179,224,0.10)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: sidebarOpen ? 'space-between' : 'center',
-          minHeight: '72px',
+          minHeight: '84px',
           flexShrink: 0,
+          gap: '8px',
         }}>
-          <AnimatePresence mode="wait">
-            {sidebarOpen ? (
-              <motion.div
-                key="logo-full"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-                style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
-              >
-                <img src={logo} alt="UEB" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
-                <div>
-                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
-                    UEB
-                  </div>
-                  <div style={{ fontSize: '9px', color: 'rgba(84,179,224,0.8)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                    Control Presupuestario
-                  </div>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.img
-                key="logo-icon"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ duration: 0.2 }}
-                src={logo} alt="UEB"
-                style={{ width: '32px', height: '32px', objectFit: 'contain' }}
-              />
-            )}
-          </AnimatePresence>
-
-          {isMobile && sidebarOpen && (
+          <img
+            src={logo} alt="UEB"
+            width="62" height="62"
+            style={{ width: sidebarOpen ? '62px' : '38px', height: sidebarOpen ? '62px' : '38px', objectFit: 'contain', transition: 'width 0.3s ease, height 0.3s ease', flexShrink: 0 }}
+          />
+          {sidebarOpen && (
             <button
               onClick={() => setSidebarOpen(false)}
+              title="Colapsar menú"
               style={{
-                background: 'rgba(255,255,255,0.08)', border: 'none',
-                color: 'rgba(255,255,255,0.7)', cursor: 'pointer',
-                width: '28px', height: '28px', borderRadius: '6px',
+                background: 'rgba(84,179,224,0.12)',
+                border: '1.5px solid rgba(84,179,224,0.30)',
+                color: 'rgba(84,179,224,0.9)',
+                cursor: 'pointer',
+                width: '30px', height: '30px',
+                borderRadius: '8px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+          )}
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              title="Expandir menú"
+              style={{
+                position: 'absolute',
+                bottom: '50%',
+                right: '8px',
+                background: 'rgba(84,179,224,0.12)',
+                border: '1.5px solid rgba(84,179,224,0.30)',
+                color: 'rgba(84,179,224,0.9)',
+                cursor: 'pointer',
+                width: '28px', height: '28px',
+                borderRadius: '8px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <X size={14} />
+              <ChevronRight size={14} />
             </button>
           )}
         </div>
@@ -321,122 +383,90 @@ export const Dashboard = () => {
           ))}
         </nav>
 
-        {/* User + Logout */}
-        <div style={{ padding: '8px', borderTop: '1px solid rgba(84,179,224,0.10)', flexShrink: 0 }}>
-          {sidebarOpen && (
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              onClick={() => setShowPasswordModal(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 12px',
-                marginBottom: '6px',
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '10px',
-                border: '1px solid rgba(84,179,224,0.12)',
-                cursor: 'pointer',
-                width: '100%',
-                textAlign: 'left',
-                fontFamily: 'var(--font-primary)',
-                transition: 'all 0.18s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(84,179,224,0.08)';
-                e.currentTarget.style.borderColor = 'rgba(84,179,224,0.25)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                e.currentTarget.style.borderColor = 'rgba(84,179,224,0.12)';
-              }}
-            >
-              <div style={{
-                width: '34px', height: '34px', borderRadius: '50%',
-                background: 'linear-gradient(135deg, #2e6ca4, #54b3e0)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 4px 12px rgba(46,108,164,0.4)',
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: 800, color: '#fff' }}>
-                  {(user?.nombres || 'U')[0].toUpperCase()}
-                </span>
-              </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {user?.nombres || 'Usuario'}
-                </div>
-                <div style={{ fontSize: '10px', color: 'rgba(84,179,224,0.75)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {user?.cargo || 'Sin cargo'}
-                </div>
-              </div>
-              <KeyRound size={12} color="rgba(84,179,224,0.6)" style={{ flexShrink: 0 }} />
-            </motion.button>
-          )}
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleLogout}
-            title={!sidebarOpen ? 'Cerrar Sesión' : undefined}
+        {/* Acerca de */}
+        <div ref={aboutRef} style={{ padding: '8px 8px 18px', borderTop: '1px solid rgba(84,179,224,0.08)', flexShrink: 0, position: 'relative' }}>
+          <button
+            onClick={() => setShowAbout(v => !v)}
+            title="Acerca de"
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: sidebarOpen ? 'flex-start' : 'center',
               gap: '8px',
               width: '100%',
-              padding: sidebarOpen ? '8px 12px' : '9px',
-              background: 'rgba(139,15,15,0.12)',
-              color: '#fca5a5',
-              border: '1px solid rgba(139,15,15,0.25)',
-              borderRadius: '10px',
+              padding: sidebarOpen ? '10px 12px' : '10px',
+              justifyContent: sidebarOpen ? 'flex-start' : 'center',
+              background: showAbout ? 'rgba(84,179,224,0.08)' : 'transparent',
+              border: 'none',
+              borderRadius: '8px',
               cursor: 'pointer',
-              fontSize: '12.5px',
-              fontWeight: 600,
               fontFamily: 'var(--font-primary)',
-              transition: 'all 0.18s ease',
+              transition: 'background 0.15s ease',
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(139,15,15,0.25)';
-              e.currentTarget.style.borderColor = 'rgba(139,15,15,0.45)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(139,15,15,0.12)';
-              e.currentTarget.style.borderColor = 'rgba(139,15,15,0.25)';
-            }}
+            onMouseEnter={e => { if (!showAbout) e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={e => { if (!showAbout) e.currentTarget.style.background = 'transparent' }}
           >
-            <LogOut size={15} style={{ flexShrink: 0 }} />
-            {sidebarOpen && <span>Cerrar Sesión</span>}
-          </motion.button>
+            <Info size={13} color="rgba(84,179,224,0.45)" style={{ flexShrink: 0 }} />
+            {sidebarOpen && (
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.30)', fontWeight: 500 }}>
+                Acerca de
+              </span>
+            )}
+          </button>
+
+          <AnimatePresence>
+            {showAbout && (
+              <motion.div
+                initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+                style={{
+                  position: 'absolute',
+                  bottom: 'calc(100% + 6px)',
+                  left: '8px',
+                  right: '8px',
+                  background: '#0f2236',
+                  border: '1px solid rgba(84,179,224,0.18)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.40)',
+                  zIndex: 200,
+                }}
+              >
+                <div style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(84,179,224,0.50)', marginBottom: '10px' }}>
+                  Desarrollado por
+                </div>
+
+                {/* Dev 1 */}
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#fff' }}>
+                    Jefferson Santiago Sanchez Quinatoa
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'rgba(84,179,224,0.65)', marginTop: '2px' }}>
+                    jefferson.sanchez@ueb.edu.ec
+                  </div>
+                </div>
+
+                <div style={{ height: '1px', background: 'rgba(84,179,224,0.10)', marginBottom: '10px' }} />
+
+                {/* Dev 2 */}
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#fff' }}>
+                    Cristofer Antony Montaluisa Zapata
+                  </div>
+                </div>
+
+                <div style={{ height: '1px', background: 'rgba(84,179,224,0.10)', marginBottom: '8px' }} />
+
+                <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.30)', lineHeight: 1.6 }}>
+                  Proyecto de Titulación · Universidad Estatal de Bolívar · 2026
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        {/* Desktop collapse toggle */}
-        {!isMobile && (
-          <motion.button
-            whileHover={{ scale: 1.15 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{
-              position: 'absolute',
-              right: '-13px', top: '50%',
-              transform: 'translateY(-50%)',
-              width: '26px', height: '26px',
-              background: '#1a3a5c',
-              border: '2px solid rgba(84,179,224,0.25)',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'rgba(84,179,224,0.9)',
-              zIndex: 20,
-              transition: 'all 0.18s ease',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
-              padding: 0,
-            }}
-          >
-            {sidebarOpen ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
-          </motion.button>
-        )}
-      </motion.aside>
+      </aside>
 
       {/* ── MAIN AREA ──────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative', zIndex: 1 }}>
@@ -464,21 +494,24 @@ export const Dashboard = () => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {/* Botón hamburguesa — solo móvil */}
             {isMobile && (
               <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
+                onClick={() => setSidebarOpen(true)}
                 style={{
-                  background: 'rgba(46,108,164,0.10)',
-                  border: '1px solid rgba(46,108,164,0.20)',
-                  color: 'var(--ueb-blue)',
+                  background: 'rgba(46,108,164,0.12)',
+                  border: '1.5px solid rgba(46,108,164,0.30)',
+                  color: '#2e6ca4',
                   cursor: 'pointer',
-                  padding: '6px',
+                  padding: '7px 10px',
                   display: 'flex', alignItems: 'center',
-                  borderRadius: '8px',
+                  borderRadius: '9px',
                   transition: 'all 0.18s ease',
                 }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(46,108,164,0.20)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(46,108,164,0.12)' }}
               >
-                <Menu size={18} />
+                <Menu size={17} />
               </button>
             )}
 
@@ -502,88 +535,228 @@ export const Dashboard = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
 
-            {/* ── Selector de Año Fiscal ── */}
-            {cedulas.length > 0 && selectedCedula && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {isReadOnly && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '4px',
-                    background: 'rgba(217,119,6,0.10)',
-                    border: '1px solid rgba(217,119,6,0.30)',
-                    borderRadius: '6px',
-                    padding: '3px 8px',
-                    fontSize: '11px', fontWeight: 700, color: '#d97706',
-                  }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    Solo lectura
-                  </div>
-                )}
-                <select
-                  value={selectedCedula.id_cedula_presupuestaria}
-                  onChange={e => {
-                    const ced = cedulas.find(c => String(c.id_cedula_presupuestaria) === e.target.value)
-                    if (ced) changeCedula(ced)
-                  }}
-                  style={{
-                    padding: '5px 10px',
-                    fontSize: '12px', fontWeight: 700,
-                    color: isReadOnly ? '#d97706' : 'var(--text-heading)',
-                    background: isReadOnly ? 'rgba(217,119,6,0.06)' : 'rgba(46,108,164,0.07)',
-                    border: `1px solid ${isReadOnly ? 'rgba(217,119,6,0.30)' : 'rgba(46,108,164,0.20)'}`,
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-primary)',
-                    outline: 'none',
-                  }}
-                >
-                  {cedulas.map(c => (
-                    <option key={c.id_cedula_presupuestaria} value={c.id_cedula_presupuestaria}>
-                      Año {c.anio}{c.anio === new Date().getFullYear() ? ' (activo)' : ''}
-                    </option>
-                  ))}
-                </select>
+            {/* Año activo — badge indicador */}
+            {selectedCedula && (() => {
+              const sinEst = selectedCedula.tiene_estructura === false;
+              return (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  padding: '4px 10px',
+                  background: sinEst ? 'rgba(185,28,28,0.10)' : isReadOnly ? 'rgba(217,119,6,0.10)' : 'rgba(46,108,164,0.08)',
+                  border: `1px solid ${sinEst ? 'rgba(185,28,28,0.30)' : isReadOnly ? 'rgba(217,119,6,0.30)' : 'rgba(46,108,164,0.20)'}`,
+                  borderRadius: '8px',
+                  fontSize: '12px', fontWeight: 700,
+                  color: sinEst ? '#b91c1c' : isReadOnly ? '#d97706' : 'var(--text-heading)',
+                  pointerEvents: 'none',
+                }}>
+                  {sinEst
+                    ? <AlertTriangle size={10} style={{ flexShrink: 0 }} />
+                    : isReadOnly && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                      )
+                  }
+                  Año {selectedCedula.anio}
+                  {sinEst && <span style={{ fontWeight: 600, fontSize: '10px' }}>— sin datos</span>}
+                </div>
+              );
+            })()}
+
+            {/* Badge de rol */}
+            {!isMobile && user?.cargo && (
+              <div style={{
+                padding: '4px 10px',
+                background: 'rgba(46,108,164,0.08)',
+                border: '1px solid rgba(46,108,164,0.20)',
+                borderRadius: '20px',
+                fontSize: '11px', fontWeight: 700,
+                color: '#2e6ca4',
+                whiteSpace: 'nowrap',
+              }}>
+                {abreviarCargo(user.cargo)}
               </div>
             )}
 
-            {/* Status indicator */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <motion.div
-                animate={{ scale: [1, 1.3, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
+            {/* Avatar + panel desplegable */}
+            <div ref={userPanelRef} style={{ position: 'relative' }}>
+              <motion.button
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.94 }}
+                onClick={() => setShowUserPanel(v => !v)}
                 style={{
-                  width: '8px', height: '8px',
+                  width: '36px', height: '36px',
                   borderRadius: '50%',
-                  background: '#059669',
-                  boxShadow: '0 0 8px rgba(5,150,105,0.6)',
+                  background: showUserPanel
+                    ? 'linear-gradient(135deg, #2e6ca4, #54b3e0)'
+                    : 'linear-gradient(135deg, #1a3a5c, #2e6ca4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '13px', fontWeight: 800, color: '#fff',
+                  cursor: 'pointer', border: 'none',
+                  boxShadow: showUserPanel
+                    ? '0 0 0 3px rgba(84,179,224,0.35), 0 4px 14px rgba(26,58,92,0.30)'
+                    : '0 2px 10px rgba(26,58,92,0.25)',
+                  transition: 'box-shadow 0.18s ease',
                 }}
-              />
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>
-                {user?.nombres?.split(' ')[0] || 'Usuario'}
-              </span>
+              >
+                {(user?.nombres || 'U')[0].toUpperCase()}
+              </motion.button>
+
+              {/* Panel desplegable */}
+              <AnimatePresence>
+                {showUserPanel && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92, y: -8 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: -8 }}
+                      transition={{ type: 'spring', stiffness: 220, damping: 22 }}
+                      style={{
+                        position: 'absolute', top: 'calc(100% + 10px)', right: 0,
+                        width: '260px',
+                        background: 'rgba(255,255,255,0.98)',
+                        border: '1px solid rgba(46,108,164,0.14)',
+                        borderRadius: '14px',
+                        boxShadow: '0 16px 48px rgba(26,58,92,0.18)',
+                        zIndex: 99,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {/* Datos personales */}
+                      <div style={{
+                        padding: '14px 16px 14px',
+                        background: 'linear-gradient(135deg, #0d1f35, #1a3a5c)',
+                        display: 'flex', alignItems: 'flex-start', gap: '10px',
+                      }}>
+                        <div style={{
+                          width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
+                          background: 'linear-gradient(135deg, #2e6ca4, #54b3e0)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '16px', fontWeight: 800, color: '#fff',
+                          boxShadow: '0 3px 10px rgba(46,108,164,0.40)',
+                          marginTop: '2px',
+                        }}>
+                          {(user?.nombres || 'U')[0].toUpperCase()}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {[user?.nombres, user?.apellidos].filter(Boolean).join(' ') || 'Usuario'}
+                          </div>
+                          <div style={{ fontSize: '10.5px', color: 'rgba(84,179,224,0.85)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {user?.cargo || 'Sin cargo'}
+                          </div>
+                          {user?.correo_institucional && (
+                            <div style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.42)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {user.correo_institucional}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+
+                        {/* Selector de año fiscal */}
+                        {cedulas.length > 0 && (
+                          <div style={{
+                            padding: '10px 12px',
+                            background: 'rgba(46,108,164,0.05)',
+                            border: '1px solid rgba(46,108,164,0.12)',
+                            borderRadius: '10px',
+                            marginBottom: '4px',
+                          }}>
+                            <div style={{ fontSize: '9px', fontWeight: 700, color: '#5a7a9f', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '7px' }}>
+                              Año Fiscal
+                            </div>
+                            <select
+                              value={selectedCedula?.id_cedula_presupuestaria ?? ''}
+                              onChange={e => {
+                                const ced = cedulas.find(c => String(c.id_cedula_presupuestaria) === e.target.value)
+                                if (ced) { changeCedula(ced); setShowUserPanel(false) }
+                              }}
+                              style={{
+                                width: '100%', padding: '8px 10px',
+                                background: '#fff',
+                                border: '1px solid rgba(46,108,164,0.22)',
+                                borderRadius: '8px',
+                                fontSize: '13px', fontWeight: 600,
+                                color: '#1a3a5c',
+                                cursor: 'pointer',
+                                fontFamily: 'var(--font-primary)',
+                                outline: 'none',
+                              }}
+                            >
+                              {cedulas.map(c => (
+                                <option key={c.id_cedula_presupuestaria} value={c.id_cedula_presupuestaria}>
+                                  {c.tiene_estructura === false
+                                    ? `Año ${c.anio} — sin datos ⚠`
+                                    : c.anio === new Date().getFullYear()
+                                      ? `Año ${c.anio} — activo`
+                                      : `Año ${c.anio} — solo lectura`}
+                                </option>
+                              ))}
+                            </select>
+                            {selectedCedula?.tiene_estructura === false && (
+                              <div style={{
+                                marginTop: '6px', padding: '6px 8px',
+                                background: 'rgba(185,28,28,0.07)',
+                                border: '1px solid rgba(185,28,28,0.20)',
+                                borderRadius: '6px',
+                                display: 'flex', alignItems: 'center', gap: '5px',
+                                fontSize: '10px', fontWeight: 600, color: '#b91c1c',
+                              }}>
+                                <AlertTriangle size={10} style={{ flexShrink: 0 }} />
+                                Sin cédula presupuestaria cargada. No se puede certificar.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Cambiar contraseña */}
+                        <motion.button
+                          whileHover={{ background: 'rgba(46,108,164,0.07)' }}
+                          onClick={() => { setShowPasswordModal(true); setShowUserPanel(false) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            width: '100%', padding: '8px 10px',
+                            background: 'transparent', border: 'none', borderRadius: '8px',
+                            cursor: 'pointer', fontFamily: 'var(--font-primary)',
+                            color: '#5a7a9f', fontSize: '12.5px', fontWeight: 500,
+                            transition: 'background 0.15s ease',
+                          }}
+                        >
+                          <KeyRound size={13} /> Cambiar contraseña
+                        </motion.button>
+
+                        {/* Cerrar sesión */}
+                        <motion.button
+                          whileHover={{ background: 'rgba(185,28,28,0.07)' }}
+                          onClick={handleLogout}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            width: '100%', padding: '8px 10px',
+                            background: 'transparent', border: 'none', borderRadius: '8px',
+                            cursor: 'pointer', fontFamily: 'var(--font-primary)',
+                            color: '#b91c1c', fontSize: '12.5px', fontWeight: 500,
+                            transition: 'background 0.15s ease',
+                          }}
+                        >
+                          <LogOut size={13} /> Cerrar sesión
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* User avatar */}
-            <div style={{
-              width: '32px', height: '32px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #1a3a5c, #2e6ca4)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '12px', fontWeight: 800, color: '#fff',
-              cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(26,58,92,0.25)',
-            }}
-              onClick={() => setShowPasswordModal(true)}
-              title="Cambiar contraseña"
-            >
-              {(user?.nombres || 'U')[0].toUpperCase()}
-            </div>
           </div>
         </motion.header>
 
         {/* Content Area */}
         <main style={{
           flex: 1,
-          overflow: 'auto',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           background: 'var(--page-bg)',
           position: 'relative',
         }}>

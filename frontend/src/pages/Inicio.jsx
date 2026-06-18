@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useFiscalYear } from '../contexts/FiscalYearContext';
+import { can } from '../utils/permissions';
+import { cachedFetch } from '../utils/apiCache';
 import { motion } from 'framer-motion';
 import Cookies from 'js-cookie';
 import {
@@ -8,62 +11,37 @@ import {
   ArrowRight, TrendingUp, BarChart3, Activity, Shield,
   DollarSign, Target, Zap,
 } from 'lucide-react';
-import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
-  Tooltip, CartesianGrid,
-} from 'recharts';
+
+const InicioChart = lazy(() => import('./InicioChart'));
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const MONTH_NAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-/* ── Animated counter — re-dispara cuando target cambia de 0 ─── */
-function useAnimatedCounter(target, duration = 1400, delay = 0) {
-  const [value, setValue] = useState(0);
+/* ── Single RAF loop drives all four counters simultaneously ─── */
+function useAnimatedCounters(t0, t1, t2, t3, duration = 1400, delay = 400) {
+  const [vals, setVals] = useState([0, 0, 0, 0]);
 
   useEffect(() => {
-    if (target === 0) { setValue(0); return; }
+    if (t0 === 0 && t1 === 0 && t2 === 0 && t3 === 0) { setVals([0, 0, 0, 0]); return; }
     const timer = setTimeout(() => {
-      const startTime = Date.now();
+      const start = Date.now();
       const tick = () => {
-        const elapsed  = Date.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased    = 1 - Math.pow(1 - progress, 3);
-        setValue(Math.floor(eased * target));
-        if (progress < 1) requestAnimationFrame(tick);
-        else setValue(target);
+        const p = Math.min((Date.now() - start) / duration, 1);
+        const e = 1 - Math.pow(1 - p, 3);
+        setVals(p < 1
+          ? [Math.floor(e * t0), Math.floor(e * t1), Math.floor(e * t2), Math.floor(e * t3)]
+          : [t0, t1, t2, t3]
+        );
+        if (p < 1) requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     }, delay);
     return () => clearTimeout(timer);
-  }, [target]);
+  }, [t0, t1, t2, t3]);
 
-  return value;
+  return vals;
 }
 
-/* ── Custom tooltip ───────────────────────────────────────────── */
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{
-      background: 'rgba(255,255,255,0.95)',
-      backdropFilter: 'blur(12px)',
-      border: '1px solid rgba(26,58,92,0.12)',
-      borderRadius: '10px',
-      padding: '10px 14px',
-      boxShadow: '0 8px 24px rgba(26,58,92,0.15)',
-      fontFamily: 'var(--font-primary)',
-    }}>
-      <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {label}
-      </p>
-      {payload.map((p, i) => (
-        <p key={i} style={{ margin: '2px 0', fontSize: '13px', fontWeight: 700, color: p.color }}>
-          {p.name}: ${(p.value / 1000).toFixed(1)}K
-        </p>
-      ))}
-    </div>
-  );
-};
 
 /* ── 3D Flip KPI card ────────────────────────────────────────── */
 function FlipCard({ front, back }) {
@@ -116,10 +94,115 @@ function FlipCard({ front, back }) {
   );
 }
 
+/* ── Skeleton card glassmorphism ─────────────────────────────── */
+function SkeletonKpiCards({ isMobile, cols = 4 }) {
+  const cardStyle = {
+    background: 'rgba(255,255,255,0.85)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255,255,255,0.95)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 24px rgba(26,58,92,0.10)',
+    padding: '20px',
+    height: isMobile ? '120px' : '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${cols}, 1fr)`, gap: '14px', height: isMobile ? 'auto' : '130px' }}>
+      {Array.from({ length: cols }).map((_, i) => (
+        <div key={i} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="skeleton" style={{ width: '70px', height: '10px' }} />
+            <div className="skeleton" style={{ width: '32px', height: '32px', borderRadius: '9px' }} />
+          </div>
+          <div>
+            <div className="skeleton" style={{ width: '110px', height: '26px', marginBottom: '8px' }} />
+            <div className="skeleton" style={{ width: '55px', height: '10px' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkeletonChart({ isMobile }) {
+  const panelStyle = {
+    background: 'rgba(255,255,255,0.85)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255,255,255,0.95)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 24px rgba(26,58,92,0.10)',
+    padding: '20px',
+  };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: '16px' }}>
+      {/* Gráfico */}
+      <div style={panelStyle}>
+        <div className="skeleton" style={{ width: '180px', height: '14px', marginBottom: '8px' }} />
+        <div className="skeleton" style={{ width: '140px', height: '11px', marginBottom: '20px' }} />
+        {/* Barras simuladas */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', height: '180px', padding: '0 4px' }}>
+          {[110, 110, 110, 110, 140].map((h, i) => (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'stretch', height: '100%', justifyContent: 'flex-end' }}>
+              <div className="skeleton" style={{ height: `${Math.round(h * 0.5)}px`, borderRadius: '6px 6px 0 0' }} />
+              <div className="skeleton" style={{ height: `${Math.round(h * 0.18)}px`, borderRadius: '6px 6px 0 0', opacity: 0.5 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Barras de progreso */}
+      <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column' }}>
+        <div className="skeleton" style={{ width: '160px', height: '14px', marginBottom: '8px' }} />
+        <div className="skeleton" style={{ width: '120px', height: '11px', marginBottom: '24px' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', flex: 1, justifyContent: 'center' }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '7px' }}>
+                <div className="skeleton" style={{ width: '110px', height: '11px' }} />
+                <div className="skeleton" style={{ width: '28px', height: '11px' }} />
+              </div>
+              <div className="skeleton" style={{ width: '100%', height: '7px', borderRadius: '999px' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonQuickActions({ isMobile }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <div key={i} style={{
+          display: 'flex', alignItems: 'center', gap: '14px',
+          padding: '16px 18px',
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          borderRadius: '14px',
+          boxShadow: '0 4px 20px rgba(26,58,92,0.08)',
+        }}>
+          <div className="skeleton" style={{ width: '42px', height: '42px', borderRadius: '12px', flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div className="skeleton" style={{ width: '70%', height: '13px', marginBottom: '8px' }} />
+            <div className="skeleton" style={{ width: '50%', height: '10px' }} />
+          </div>
+          <div className="skeleton" style={{ width: '15px', height: '15px', borderRadius: '4px', flexShrink: 0 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Main component ──────────────────────────────────────────── */
 export const Inicio = () => {
   const navigate = useNavigate();
   const { user }  = useAuth();
+  const { selectedCedula } = useFiscalYear();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [loading,  setLoading]  = useState(true);
 
@@ -139,22 +222,32 @@ export const Inicio = () => {
     return () => window.removeEventListener('resize', h);
   }, []);
 
-  useEffect(() => { fetchDashboard(); }, []);
+  useEffect(() => { fetchDashboard(); }, [selectedCedula]);
 
   const fetchDashboard = async () => {
     try {
       const token   = Cookies.get('auth_token');
       const authHdr = { Authorization: `Bearer ${token}` };
+      const cedulaQ = selectedCedula
+        ? `?id_cedula_presupuestaria=${selectedCedula.id_cedula_presupuestaria}`
+        : '';
 
-      const [presRes, usersRes, certRes, liqRes] = await Promise.all([
-        fetch(`${API}/presupuesto-disponible`),
-        fetch(`${API}/usuarios`,                          { headers: authHdr }),
-        fetch(`${API}/reportes/certificaciones/json`,     { headers: authHdr }),
-        fetch(`${API}/reportes/liquidaciones/json`,       { headers: authHdr }),
-      ]);
+      const puedeVerUsuarios = can.verUsuarios(user);
+
+      const fetches = [
+        cachedFetch(`${API}/presupuesto-disponible${cedulaQ}`, { headers: authHdr }),
+        puedeVerUsuarios ? cachedFetch(`${API}/usuarios`, { headers: authHdr }) : Promise.resolve(null),
+        cachedFetch(`${API}/reportes/certificaciones/json`, { headers: authHdr }),
+        cachedFetch(`${API}/reportes/liquidaciones/json`,   { headers: authHdr }),
+      ];
+
+      const [presRes, usersRes, certRes, liqRes] = await Promise.all(fetches);
 
       const [presJson, usersJson, certJson, liqJson] = await Promise.all([
-        presRes.json(), usersRes.json(), certRes.json(), liqRes.json(),
+        presRes.json(),
+        usersRes ? usersRes.json() : Promise.resolve(null),
+        certRes.json(),
+        liqRes.json(),
       ]);
 
       /* ── Presupuesto totales ── */
@@ -167,30 +260,36 @@ export const Inicio = () => {
 
         /* ── Certificaciones ── */
         let certAprobadas = 0;
-        if (certJson.success && certJson.data?.length) {
-          const total    = certJson.data.length;
-          const activas  = certJson.data.filter(c => c.estado !== 'ANULADA' && c.estado !== 'ERRADO').length;
-          certAprobadas  = total > 0 ? Math.round((activas / total) * 100) : 0;
+        const currentYear  = new Date().getFullYear();
+        const currentMonth = new Date().getMonth();
+        const byMonth = {};
 
-          /* Agrupar por mes (año actual) */
-          const currentYear = new Date().getFullYear();
-          const byMonth = {};
+        if (certJson.success && certJson.data?.length) {
+          const total   = certJson.data.length;
+          const activas = certJson.data.filter(c => c.estado !== 'ANULADA' && c.estado !== 'ERRADO').length;
+          certAprobadas = total > 0 ? Math.round((activas / total) * 100) : 0;
+
           certJson.data.forEach(c => {
-            const d = new Date(c.fecha_elaboracion);
+            if (['ANULADA', 'RECHAZADO', 'ERRADO'].includes(c.estado)) return;
+            const d = new Date(c.fecha_elaboracion + 'T12:00:00-05:00');
             if (d.getFullYear() !== currentYear) return;
             const m = d.getMonth();
             byMonth[m] = (byMonth[m] || 0) + parseFloat(c.monto_total || 0);
           });
-
-          const monthlyBudget = t.total_codificado > 0 ? t.total_codificado / 12 : 0;
-          const currentMonth  = new Date().getMonth();
-          const months = Array.from({ length: currentMonth + 1 }, (_, i) => ({
-            name:        MONTH_NAMES[i],
-            Codificado:  Math.round(monthlyBudget),
-            Certificado: Math.round(byMonth[i] || 0),
-          }));
-          setChartData(months);
         }
+
+        /* Certificado acumulado mes a mes — el último mes forzado a total_certificado */
+        let cumCert = 0;
+        const months = Array.from({ length: currentMonth + 1 }, (_, i) => {
+          cumCert += byMonth[i] || 0;
+          const isLast = i === currentMonth;
+          return {
+            name:        MONTH_NAMES[i],
+            Codificado:  Math.round(t.total_codificado),
+            Certificado: isLast ? Math.round(t.total_certificado) : Math.round(cumCert),
+          };
+        });
+        setChartData(months);
 
         /* ── Liquidaciones ── */
         let liqActivas = 0;
@@ -204,7 +303,7 @@ export const Inicio = () => {
       }
 
       /* ── Usuarios activos ── */
-      if (usersJson.status === 'success' && usersJson.data?.length) {
+      if (usersJson?.status === 'success' && usersJson.data?.length) {
         const activos = usersJson.data.filter(u => u.estado === 'activo').length;
         setUsuariosCount(activos);
       }
@@ -215,11 +314,13 @@ export const Inicio = () => {
     }
   };
 
-  /* Counters animados desde datos reales */
-  const animTotal    = useAnimatedCounter(totales.total_codificado,  1600, 400);
-  const animUsado    = useAnimatedCounter(totales.total_certificado, 1400, 600);
-  const animDisp     = useAnimatedCounter(totales.total_saldo,       1400, 800);
-  const animUsuarios = useAnimatedCounter(usuariosCount,              900, 500);
+  /* Single RAF loop drives all four counters */
+  const [animTotal, animUsado, animDisp, animUsuarios] = useAnimatedCounters(
+    totales.total_codificado,
+    totales.total_certificado,
+    totales.total_saldo,
+    usuariosCount,
+  );
 
   const pctUsado = totales.total_codificado > 0
     ? Math.round((totales.total_certificado / totales.total_codificado) * 100)
@@ -230,31 +331,25 @@ export const Inicio = () => {
 
   const P = isMobile ? '20px' : '28px 32px';
 
-  const cardVariants = {
-    hidden:  { opacity: 0, y: 24, scale: 0.97 },
-    visible: (i) => ({
-      opacity: 1, y: 0, scale: 1,
-      transition: { delay: i * 0.09, type: 'spring', stiffness: 120, damping: 18 }
-    }),
-  };
-
   const quickActions = [
-    { title: 'Estructura Presupuestaria', desc: 'Importar datos desde CSV',        icon: Upload,       color: '#2e6ca4', path: '/dashboard/estructura-presupuestaria' },
-    { title: 'Ver Datos',                 desc: 'Visualizar información cargada',  icon: Database,     color: '#0891b2', path: '/dashboard/estructura-presupuestaria-data' },
-    { title: 'Cédula Presupuestaria',     desc: 'Gestionar asignaciones',          icon: FileText,     color: '#d97706', path: '/dashboard/cedula-presupuestaria' },
-    { title: 'Certificaciones',           desc: 'Crear y gestionar certificados',  icon: CheckCircle2, color: '#059669', path: '/dashboard/certificacion' },
-    { title: 'Gestionar Usuarios',        desc: 'Administrar acceso de usuarios',  icon: Users,        color: '#8b0f0f', path: '/dashboard/usuarios' },
-    { title: 'Reportes',                  desc: 'Exportar datos y documentos',     icon: BarChart3,    color: '#7c3aed', path: '/dashboard/reportes' },
-  ];
+    { title: 'Cédula Presupuestaria',     desc: 'Importar y gestionar presupuesto', icon: FileText,     color: '#d97706', path: '/dashboard/cedula-presupuestaria',  check: can.verCedula },
+    { title: 'Certificaciones',           desc: 'Crear y gestionar certificados',   icon: CheckCircle2, color: '#059669', path: '/dashboard/certificacion',          check: can.verCertificacion },
+    { title: 'Gestionar Usuarios',        desc: 'Administrar acceso de usuarios',   icon: Users,        color: '#8b0f0f', path: '/dashboard/usuarios',               check: can.verUsuarios },
+    { title: 'Reportes',                  desc: 'Exportar datos y documentos',      icon: BarChart3,    color: '#7c3aed', path: '/dashboard/reportes',               check: can.verReportes },
+  ].filter(a => a.check(user));
 
   return (
     <div style={{ background: 'var(--page-bg)', minHeight: '100%', padding: P, fontFamily: 'var(--font-primary)' }}>
+      <style>{`
+        @keyframes ini-down  { from { opacity:0; transform:translateY(-20px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes ini-up    { from { opacity:0; transform:translateY(24px) scale(0.97) } to { opacity:1; transform:translateY(0) scale(1) } }
+        @keyframes ini-left  { from { opacity:0; transform:translateX(-20px) } to { opacity:1; transform:translateX(0) } }
+        @keyframes ini-right { from { opacity:0; transform:translateX(20px)  } to { opacity:1; transform:translateX(0) } }
+        @keyframes ini-fade  { from { opacity:0 } to { opacity:1 } }
+      `}</style>
 
       {/* ── Hero Welcome Banner ────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+      <div
         style={{
           background: 'linear-gradient(135deg, #0d1f35 0%, #1a3a5c 45%, #2e6ca4 100%)',
           borderRadius: '20px',
@@ -263,6 +358,7 @@ export const Inicio = () => {
           position: 'relative',
           overflow: 'hidden',
           boxShadow: '0 20px 60px rgba(13,31,53,0.35)',
+          animation: 'ini-down 0.5s cubic-bezier(0.4,0,0.2,1) both',
         }}
       >
         <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '220px', height: '220px', borderRadius: '50%', background: 'rgba(84,179,224,0.10)', backdropFilter: 'blur(8px)', pointerEvents: 'none' }} />
@@ -271,21 +367,17 @@ export const Inicio = () => {
         <div style={{ position: 'absolute', bottom: '10%', right: '5%', width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(84,179,224,0.12)', pointerEvents: 'none' }} />
 
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <motion.p initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
-            style={{ margin: '0 0 6px', fontSize: '10.5px', color: 'rgba(84,179,224,0.85)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          <p style={{ margin: '0 0 6px', fontSize: '10.5px', color: 'rgba(84,179,224,0.85)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', animation: 'ini-left 0.4s 0.15s both' }}>
             Universidad Estatal de Bolívar
-          </motion.p>
-          <motion.h1 initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.22 }}
-            style={{ margin: '0 0 8px', fontSize: isMobile ? '22px' : '30px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-            Bienvenido, {user?.nombres?.split(' ')[0] || 'Usuario'}
-          </motion.h1>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.32 }}
-            style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+          </p>
+          <h1 style={{ margin: '0 0 8px', fontSize: isMobile ? '22px' : '30px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.1, animation: 'ini-left 0.4s 0.22s both' }}>
+            Bienvenido, {[user?.nombres?.split(' ')[0], user?.apellidos?.split(' ')[0]].filter(Boolean).join(' ') || 'Usuario'}
+          </h1>
+          <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, animation: 'ini-fade 0.4s 0.32s both' }}>
             Panel de Control — Sistema de Control Presupuestario · Grupos 51 y 58
-          </motion.p>
+          </p>
 
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-            style={{ marginTop: '18px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div style={{ marginTop: '18px', display: 'flex', gap: '8px', flexWrap: 'wrap', animation: 'ini-up 0.4s 0.4s both' }}>
             {[
               { icon: Zap,    label: `Año Fiscal ${new Date().getFullYear()}`, color: '#54b3e0' },
               { icon: Target, label: 'Grupos 51 y 58',                         color: 'rgba(255,255,255,0.6)' },
@@ -306,18 +398,18 @@ export const Inicio = () => {
                 </div>
               );
             })}
-          </motion.div>
+          </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* ── KPI Cards ─────────────────────────────────────── */}
       <div style={{ marginBottom: '24px' }}>
-        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-          style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
+        <p style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase', animation: 'ini-fade 0.4s 0.3s both' }}>
           Resumen Presupuestario
-        </motion.p>
+        </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '14px', height: isMobile ? 'auto' : '130px' }}>
+        {loading ? <SkeletonKpiCards isMobile={isMobile} cols={can.verUsuarios(user) ? 4 : 3} /> : (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${can.verUsuarios(user) ? 4 : 3}, 1fr)`, gap: '14px', height: isMobile ? 'auto' : '130px' }}>
           {[
             {
               label: 'Presupuesto Total', value: animTotal,    prefix: '$', icon: DollarSign, color: '#2e6ca4',
@@ -334,16 +426,22 @@ export const Inicio = () => {
               frontSub: `${pctDisp}% restante`,
               backLabel: 'Saldo libre', backVal: `${pctDisp}% disponible`, backSub: 'Partidas con saldo para certificar',
             },
-            {
+            ...(can.verUsuarios(user) ? [{
               label: 'Usuarios Activos',  value: animUsuarios, prefix: '', icon: Shield,       color: '#7c3aed',
               frontSub: 'En el sistema',
               backLabel: 'Accesos', backVal: 'Activos hoy', backSub: 'Usuarios con sesión habilitada',
-            },
+            }] : []),
           ].map((card, i) => {
             const CardIcon = card.icon;
             return (
-              <motion.div key={i} custom={i} variants={cardVariants} initial="hidden" animate="visible"
-                style={{ height: isMobile ? '120px' : '100%' }}>
+              <div
+                key={i}
+                style={{
+                  height: isMobile ? '120px' : '100%',
+                  animation: 'ini-up 0.45s ease both',
+                  animationDelay: `${i * 0.09}s`,
+                }}
+              >
                 <FlipCard
                   front={
                     <>
@@ -361,7 +459,7 @@ export const Inicio = () => {
                       </div>
                       <div style={{ marginTop: 'auto' }}>
                         <p style={{ margin: '0 0 2px', fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--text-heading)', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
-                          {loading ? '—' : `${card.prefix}${card.value.toLocaleString('es-EC')}`}
+                          {`${card.prefix}${card.value.toLocaleString('es-EC')}`}
                         </p>
                         <p style={{ margin: 0, fontSize: '11px', color: card.color, fontWeight: 600 }}>
                           {card.frontSub}
@@ -383,22 +481,26 @@ export const Inicio = () => {
                     </>
                   }
                 />
-              </motion.div>
+              </div>
             );
           })}
         </div>
+        )}
       </div>
 
       {/* ── Chart + Progress ──────────────────────────────── */}
+      {loading ? (
+        <div style={{ marginBottom: '24px' }}><SkeletonChart isMobile={isMobile} /></div>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: '16px', marginBottom: '24px' }}>
 
         {/* Bar Chart */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5, duration: 0.4 }}
+        <div
           style={{
             background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
             border: '1px solid rgba(255,255,255,0.95)', borderRadius: '16px',
             boxShadow: '0 4px 24px rgba(26,58,92,0.10)', padding: '20px',
+            animation: 'ini-left 0.4s 0.5s both',
           }}
         >
           <div style={{ marginBottom: '16px' }}>
@@ -406,45 +508,30 @@ export const Inicio = () => {
               Evolución Presupuestaria
             </h3>
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
-              Codificado vs. Certificado ({new Date().getFullYear()})
+              Certificado mensual ({new Date().getFullYear()})
             </p>
           </div>
 
-          {loading || chartData.length === 0 ? (
-            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-              {loading ? 'Cargando datos…' : 'Sin certificaciones registradas este año'}
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={chartData} barGap={4} barCategoryGap="25%">
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(26,58,92,0.07)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'var(--font-primary)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v/1000).toFixed(0)}K`} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(26,58,92,0.05)' }} />
-                <Bar dataKey="Codificado"  fill="#2e6ca4" radius={[6,6,0,0]} isAnimationActive animationDuration={1200} />
-                <Bar dataKey="Certificado" fill="#54b3e0" radius={[6,6,0,0]} isAnimationActive animationDuration={1400} animationBegin={200} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+          <Suspense fallback={<div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>Cargando gráfico…</div>}>
+            <InicioChart chartData={chartData} loading={loading} />
+          </Suspense>
 
           <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-            {[{ color: '#2e6ca4', label: 'Codificado' }, { color: '#54b3e0', label: 'Certificado' }].map((l, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: l.color }} />
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{l.label}</span>
-              </div>
-            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#54b3e0' }} />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Certificado</span>
+            </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Progress bars */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.55, duration: 0.4 }}
+        <div
           style={{
             background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
             border: '1px solid rgba(255,255,255,0.95)', borderRadius: '16px',
             boxShadow: '0 4px 24px rgba(26,58,92,0.10)', padding: '20px',
             display: 'flex', flexDirection: 'column',
+            animation: 'ini-right 0.4s 0.55s both',
           }}
         >
           <div style={{ marginBottom: '20px' }}>
@@ -467,13 +554,13 @@ export const Inicio = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '7px' }}>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>{bar.label}</span>
                   <span style={{ fontSize: '12px', fontWeight: 800, color: bar.color }}>
-                    {loading ? '—' : `${bar.pct}%`}
+                    {`${bar.pct}%`}
                   </span>
                 </div>
                 <div style={{ width: '100%', height: '7px', background: 'rgba(26,58,92,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: loading ? '0%' : `${bar.pct}%` }}
+                    animate={{ width: `${bar.pct}%` }}
                     transition={{ duration: 1.2, delay: 0.7 + i * 0.15, ease: 'easeOut' }}
                     style={{ height: '100%', background: bar.gradient, borderRadius: '999px', boxShadow: `0 2px 8px ${bar.color}55` }}
                   />
@@ -481,22 +568,23 @@ export const Inicio = () => {
               </div>
             ))}
           </div>
-        </motion.div>
+        </div>
       </div>
+      )}
 
       {/* ── Quick Actions ─────────────────────────────────── */}
       <div>
-        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-          style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
+        <p style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase', animation: 'ini-fade 0.4s 0.6s both' }}>
           Acciones Rápidas
-        </motion.p>
+        </p>
 
+        {loading ? <SkeletonQuickActions isMobile={isMobile} /> : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
           {quickActions.map((action, i) => {
             const Icon = action.icon;
             return (
               <motion.button
-                key={i} custom={i} variants={cardVariants} initial="hidden" animate="visible"
+                key={i}
                 whileHover={{ y: -4, boxShadow: '0 16px 40px rgba(26,58,92,0.16)', scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => navigate(action.path)}
@@ -508,6 +596,8 @@ export const Inicio = () => {
                   boxShadow: '0 4px 20px rgba(26,58,92,0.08)',
                   cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-primary)',
                   transition: 'border-color 0.18s ease',
+                  animation: 'ini-up 0.45s ease both',
+                  animationDelay: `${0.65 + i * 0.07}s`,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${action.color}40`; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.95)'; }}
@@ -533,18 +623,24 @@ export const Inicio = () => {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Footer */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }}
-        style={{ marginTop: '28px', paddingTop: '16px', borderTop: '1px solid rgba(26,58,92,0.08)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+      <div
+        style={{
+          marginTop: '28px', paddingTop: '16px', borderTop: '1px solid rgba(26,58,92,0.08)',
+          display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px',
+          animation: 'ini-fade 0.4s 0.9s both',
+        }}
+      >
         <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-light)' }}>
           Sistema Control Presupuestario © {new Date().getFullYear()} — UEB
         </p>
         <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-light)' }}>
           Versión 1.0
         </p>
-      </motion.div>
+      </div>
     </div>
   );
 };

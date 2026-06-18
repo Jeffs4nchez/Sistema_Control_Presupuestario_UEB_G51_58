@@ -105,7 +105,7 @@ export default function Home() {
     })
     certList.forEach(cert => {
       if (!cert.fecha_elaboracion) return
-      const d = new Date(cert.fecha_elaboracion)
+      const d = new Date(cert.fecha_elaboracion + 'T12:00:00-05:00')
       const slot = last6.find(s => s.year === d.getFullYear() && s.month === d.getMonth())
       if (slot) slot.count++
     })

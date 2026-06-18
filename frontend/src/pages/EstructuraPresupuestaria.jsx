@@ -43,6 +43,17 @@ const CSV_COLS = [
   { n: 18, name: 'Nombre Naturaleza',  ejemplo: 'ADMINISTRACIÓN',            tipo: 'Texto'  },
 ]
 
+function SkeletonSummaryChips() {
+  const widths = [160, 180, 150, 165, 120]
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+      {widths.map((w, i) => (
+        <div key={i} className="skeleton" style={{ height: '34px', width: `${w}px`, borderRadius: '8px' }} />
+      ))}
+    </div>
+  )
+}
+
 export default function EstructuraPresupuestaria() {
   const { token } = useAuth()
   const { isReadOnly, selectedCedula } = useFiscalYear()
@@ -51,7 +62,7 @@ export default function EstructuraPresupuestaria() {
   const [file,           setFile]           = useState(null)
   const [loading,        setLoading]        = useState(false)
   const [error,          setError]          = useState(null)
-  const [success,        setSuccess]        = useState(false)
+  const [uploadResult,   setUploadResult]   = useState(null)
   const [summary,        setSummary]        = useState(null)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [showCols,       setShowCols]       = useState(false)
@@ -107,10 +118,9 @@ export default function EstructuraPresupuestaria() {
       })
       const data = await res.json()
       if (data.success || data.status === 'success') {
-        setSuccess(true); setFile(null); setShowCols(false)
+        setUploadResult(data.data || null); setFile(null); setShowCols(false)
         fetchSummary(); setRefreshKey(k => k + 1)
         setActiveTab('datos')
-        setTimeout(() => setSuccess(false), 5000)
       } else { setError(data.message || 'Error al cargar el archivo') }
     } catch (err) { setError('Error: ' + (err instanceof Error ? err.message : 'Unknown error')) }
     finally { setLoading(false) }
@@ -213,23 +223,49 @@ export default function EstructuraPresupuestaria() {
           {activeTab === 'datos' && (
             <div style={{ padding: P, display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-              {/* Success toast */}
+              {/* Resultado de carga */}
               <AnimatePresence>
-                {success && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)', borderRadius: '10px', padding: '10px 14px', color: GREEN, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}
+                {uploadResult && (
+                  <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                    style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.28)', borderRadius: '12px', padding: '16px 18px' }}
                   >
-                    <CheckCircle size={14} /> Estructura cargada exitosamente
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: GREEN, fontWeight: 700, fontSize: '13px' }}>
+                        <CheckCircle size={15} /> Carga completada
+                      </div>
+                      <button onClick={() => setUploadResult(null)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', padding: 0 }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '8px' }}>
+                      {[
+                        { label: 'Filas en CSV',        value: uploadResult.total_rows,   color: TEXT        },
+                        { label: 'Procesadas',          value: uploadResult.processed,    color: ACCENT      },
+                        { label: 'Nuevas (ítem+fuente)', value: uploadResult.inserted,   color: GREEN       },
+                        { label: 'Ya en BD',            value: uploadResult.existing,    color: '#0891b2'   },
+                        { label: 'Omitidas',            value: uploadResult.skipped ?? 0, color: '#b91c1c' },
+                      ].map((s, i) => (
+                        <div key={i} style={{ background: '#fff', border: `1px solid ${s.color}30`, borderLeft: `3px solid ${s.color}`, borderRadius: '8px', padding: '10px 12px' }}>
+                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: MUTED, fontWeight: 600 }}>{s.label}</p>
+                          <p style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: s.color }}>{s.value ?? 0}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {uploadResult.errors?.length > 0 && (
+                      <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(185,28,28,0.06)', borderRadius: '8px' }}>
+                        <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filas omitidas ({uploadResult.errors.length})</p>
+                        {uploadResult.errors.map((e, i) => (
+                          <p key={i} style={{ margin: '2px 0', fontSize: '12px', color: '#7f1d1d' }}>Fila {e.row}: {e.error}</p>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
 
               {/* Summary cards */}
               {summaryLoading ? (
-                <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '24px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>
-                  <div style={{ width: '28px', height: '28px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: ACCENT, borderRadius: '50%', margin: '0 auto 10px', animation: 'spin 0.8s linear infinite' }} />
-                  Cargando resumen...
-                </div>
+                <SkeletonSummaryChips />
               ) : summaryItems.length > 0 && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}

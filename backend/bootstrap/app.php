@@ -12,8 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Confiar en todos los proxies (necesario para ngrok)
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'validate.custom.token' => \App\Http\Middleware\ValidateCustomToken::class,
+            'check.role'            => \App\Http\Middleware\CheckRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

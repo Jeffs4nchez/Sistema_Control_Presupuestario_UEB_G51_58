@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Cookies from 'js-cookie'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Clock, Search, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { formatFechaHora } from '../utils/fechaUtils'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
@@ -105,6 +106,33 @@ function Detalle({ r }) {
   return <span style={{ fontSize: '12px', color: muted }}>—</span>
 }
 
+function SkeletonAuditoriaRows() {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '750px' }}>
+        <thead>
+          <tr style={{ background: '#f0f4f8', borderBottom: '2px solid rgba(26,58,92,0.08)' }}>
+            {['Fecha / Hora', 'Certificado', 'Acción', 'Detalle', 'Usuario'].map((h, i) => (
+              <th key={i} style={{ padding: '11px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[0, 1, 2, 3, 4, 5, 6].map(i => (
+            <tr key={i} style={{ borderBottom: '1px solid rgba(26,58,92,0.07)' }}>
+              <td style={{ padding: '11px 16px' }}><div className="skeleton" style={{ width: '120px', height: '12px', borderRadius: '6px' }} /></td>
+              <td style={{ padding: '11px 16px' }}><div className="skeleton" style={{ width: '80px', height: '13px', borderRadius: '6px' }} /></td>
+              <td style={{ padding: '11px 16px' }}><div className="skeleton" style={{ width: '90px', height: '20px', borderRadius: '999px' }} /></td>
+              <td style={{ padding: '11px 16px' }}><div className="skeleton" style={{ width: '180px', height: '12px', borderRadius: '6px' }} /></td>
+              <td style={{ padding: '11px 16px' }}><div className="skeleton" style={{ width: '100px', height: '13px', borderRadius: '6px' }} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function Auditoria() {
   const [data,    setData]    = useState([])
   const [loading, setLoading] = useState(true)
@@ -116,20 +144,31 @@ export default function Auditoria() {
   const [page,    setPage]    = useState(1)
   const [total,   setTotal]   = useState(0)
   const limit = 20
+  const allDataRef = useRef([])
+
+  const filterAndPaginate = (s, ac, de, ha, pg) => {
+    let items = allDataRef.current
+    if (s) { const q = s.toLowerCase(); items = items.filter(r => r.numero_certificado?.toLowerCase().includes(q) || r.nombre_usuario?.toLowerCase().includes(q)) }
+    if (ac) items = items.filter(r => r.accion === ac)
+    if (de) items = items.filter(r => r.fecha_hora?.slice(0, 10) >= de)
+    if (ha) items = items.filter(r => r.fecha_hora?.slice(0, 10) <= ha)
+    setTotal(items.length)
+    const start = (pg - 1) * limit
+    setData(items.slice(start, start + limit))
+  }
 
   const cargar = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
       const token = Cookies.get('auth_token')
-      const params = new URLSearchParams({ page, limit, search, accion, desde, hasta })
-      const res = await fetch(`${API}/auditoria?${params}`, {
+      const res = await fetch(`${API}/auditoria?limit=9999`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const json = await res.json()
       if (json.success) {
-        setData(json.data)
-        setTotal(json.pagination.total)
+        allDataRef.current = json.data
+        filterAndPaginate(search, accion, desde, hasta, page)
       } else {
         setError(json.message || 'Error al cargar auditoría')
       }
@@ -138,11 +177,28 @@ export default function Auditoria() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, accion, desde, hasta])
+  }, [])
 
-  useEffect(() => { cargar() }, [cargar])
+  // Carga inicial
+  useEffect(() => { cargar() }, [])
 
-  const limpiar = () => { setSearch(''); setAccion(''); setDesde(''); setHasta(''); setPage(1) }
+  // Filtros → instantáneo client-side
+  const filterMounted = useRef(false)
+  useEffect(() => {
+    if (!filterMounted.current) { filterMounted.current = true; return }
+    setPage(1)
+    filterAndPaginate(search, accion, desde, hasta, 1)
+  }, [search, accion, desde, hasta])
+
+  // Página → client-side
+  useEffect(() => {
+    if (allDataRef.current.length > 0) filterAndPaginate(search, accion, desde, hasta, page)
+  }, [page])
+
+  const limpiar = () => {
+    setSearch(''); setAccion(''); setDesde(''); setHasta(''); setPage(1)
+    filterAndPaginate('', '', '', '', 1)
+  }
   const totalPages = Math.max(1, Math.ceil(total / limit))
 
   const focusStyle = (e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)' }
@@ -203,9 +259,9 @@ export default function Auditoria() {
           <div style={{ position: 'relative' }}>
             <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: '#8fa3c0', pointerEvents: 'none' }} />
             <input
-              type="text" placeholder="N° certificado o usuario..."
+              type="text" placeholder="N° certificado o usuario..." maxLength={50}
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+              onChange={(e) => setSearch(e.target.value.slice(0, 50))}
               style={{ ...inputStyle, paddingLeft: '28px' }}
               onFocus={focusStyle} onBlur={blurStyle}
             />
@@ -280,10 +336,7 @@ export default function Auditoria() {
         }}
       >
         {loading ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ width: '36px', height: '36px', border: '3px solid rgba(46,108,164,0.12)', borderTopColor: '#2e6ca4', borderRadius: '50%', animation: 'spin 0.9s linear infinite', margin: '0 auto 12px' }} />
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Cargando registros...</p>
-          </div>
+          <SkeletonAuditoriaRows />
         ) : error ? (
           <div style={{ padding: '24px', color: '#b91c1c', fontSize: '13px', background: 'rgba(139,15,15,0.05)', borderRadius: '16px' }}>{error}</div>
         ) : data.length === 0 ? (
@@ -317,7 +370,7 @@ export default function Auditoria() {
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
                     <td style={{ padding: '11px 16px', fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                      {r.fecha_hora}
+                      {formatFechaHora(r.fecha_hora)}
                     </td>
                     <td style={{ padding: '11px 16px', fontSize: '13px', fontWeight: 700, color: '#2e6ca4', whiteSpace: 'nowrap' }}>
                       {r.numero_certificado}

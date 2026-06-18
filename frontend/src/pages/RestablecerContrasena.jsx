@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { theme, createGradient } from '../config/theme'
-import logoSNC from '../assets/logo.png'
+import logoSNC from '../assets/logo.webp'
 import { Lock, Eye, EyeOff, ShieldCheck, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'

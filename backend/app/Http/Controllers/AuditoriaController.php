@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use App\Models\Auditoria;
 
 class AuditoriaController extends Controller
 {
+    private static array $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema'];
+
     private function formatRow(Auditoria $r): array
     {
         return [
@@ -31,6 +34,9 @@ class AuditoriaController extends Controller
      */
     public function porCertificacion($id)
     {
+        if (!in_array(Auth::user()?->cargo, self::$rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para ver la auditoría'], 403);
+        }
         try {
             $registros = Auditoria::where('id_certificacion', $id)
                 ->orderBy('fecha_hora', 'desc')
@@ -49,6 +55,9 @@ class AuditoriaController extends Controller
      */
     public function index(Request $request)
     {
+        if (!in_array(Auth::user()?->cargo, self::$rolesPermitidos)) {
+            return response()->json(['success' => false, 'message' => 'No tiene permiso para ver la auditoría'], 403);
+        }
         try {
             $search  = $request->input('search', '');
             $accion  = $request->input('accion', '');

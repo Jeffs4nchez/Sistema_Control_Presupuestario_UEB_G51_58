@@ -4,6 +4,7 @@ import { FileText, Plus, Lock } from 'lucide-react'
 import CrearCertificacion from "./CrearCertificacion"
 import ListaCertificaciones from "./ListaCertificaciones"
 import { useFiscalYear } from '../contexts/FiscalYearContext'
+import { invalidateCache } from '../utils/apiCache'
 
 export default function Certificacion() {
   const { isReadOnly, selectedCedula } = useFiscalYear()
@@ -23,6 +24,7 @@ export default function Certificacion() {
   }, [isReadOnly])
 
   const handleCertificadoCreado = () => {
+    invalidateCache('/certificacion')
     setRefresh(p => p + 1)
     setActiveTab("lista")
   }

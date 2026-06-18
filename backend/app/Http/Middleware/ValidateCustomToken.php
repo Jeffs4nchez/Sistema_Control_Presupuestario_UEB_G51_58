@@ -62,6 +62,15 @@ class ValidateCustomToken
             ], 401);
         }
 
+        // Verificar que el usuario esté activo
+        if (strtolower($user->estado) !== 'activo') {
+            $msg = strtolower($user->estado) === 'bloqueado'
+                ? 'Tu cuenta está bloqueada. Contacta al administrador.'
+                : 'Tu cuenta está inactiva. Contacta al administrador.';
+            \Log::warning('Blocked/inactive user API request', ['id' => $user->id_usuario, 'estado' => $user->estado]);
+            return response()->json(['status' => 'error', 'message' => $msg], 403);
+        }
+
         // Autenticar al usuario
         Auth::setUser($user);
 

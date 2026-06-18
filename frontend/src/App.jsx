@@ -1,24 +1,34 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useContext } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
 import { FiscalYearProvider } from './contexts/FiscalYearContext';
 import { ProtectedRoute } from './contexts/ProtectedRoute';
 import { LoadingScreen } from './components/LoadingScreen';
-import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
-import { Usuarios } from './pages/Usuarios';
-import { Inicio } from './pages/Inicio';
-import EstructuraPresupuestaria from './pages/EstructuraPresupuestaria';
-import CedulaPresupuestaria from './pages/CedulaPresupuestaria';
-import Certificacion from './pages/Certificacion';
-import Liquidaciones from './pages/Liquidaciones';
-import RecuperarContrasena from './pages/RecuperarContrasena';
-import RestablecerContrasena from './pages/RestablecerContrasena';
-import EntidadRequiriente from './pages/EntidadRequiriente';
-import Reportes from './pages/Reportes';
-import ReportePrint from './pages/ReportePrint';
-import Auditoria from './pages/Auditoria';
+import { can } from './utils/permissions';
 import './App.css';
-import { useContext } from 'react';
+
+// Carga inmediata: Login es la primera pantalla que ve el usuario
+import { Login } from './pages/Login';
+
+// Lazy loading: el resto se carga solo cuando se navega a esa ruta
+const Dashboard            = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Usuarios             = lazy(() => import('./pages/Usuarios').then(m => ({ default: m.Usuarios })));
+const Inicio               = lazy(() => import('./pages/Inicio').then(m => ({ default: m.Inicio })));
+const CedulaPresupuestaria = lazy(() => import('./pages/CedulaPresupuestaria'));
+const Certificacion        = lazy(() => import('./pages/Certificacion'));
+const Liquidaciones        = lazy(() => import('./pages/Liquidaciones'));
+const RecuperarContrasena  = lazy(() => import('./pages/RecuperarContrasena'));
+const RestablecerContrasena = lazy(() => import('./pages/RestablecerContrasena'));
+const EntidadRequiriente   = lazy(() => import('./pages/EntidadRequiriente'));
+const Reportes             = lazy(() => import('./pages/Reportes'));
+const ReportePrint         = lazy(() => import('./pages/ReportePrint'));
+const Auditoria            = lazy(() => import('./pages/Auditoria'));
+
+function RoleRoute({ check, children }) {
+  const { user } = useContext(AuthContext);
+  if (!check(user)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
 
 function AppContent() {
   const { isLoading } = useContext(AuthContext);
@@ -28,56 +38,73 @@ function AppContent() {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
-      <Route path="/restablecer-contrasena" element={<RestablecerContrasena />} />
-      <Route path="/reporte-print" element={<ReportePrint />} />
-      
-      {/* Dashboard Layout con rutas anidadas */}
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      >
-        {/* Ruta para /dashboard/usuarios */}
-        <Route path="usuarios" element={<Usuarios />} />
-        
-        {/* Ruta para /dashboard/estructura-presupuestaria */}
-        <Route path="estructura-presupuestaria" element={<EstructuraPresupuestaria />} />
-        <Route path="estructura-presupuestaria-data" element={<EstructuraPresupuestaria />} />
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
+        <Route path="/restablecer-contrasena" element={<RestablecerContrasena />} />
+        <Route path="/reporte-print" element={<ReportePrint />} />
 
-        {/* Ruta para /dashboard/cedula-presupuestaria */}
-        <Route path="cedula-presupuestaria" element={<CedulaPresupuestaria />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="usuarios" element={
+            <RoleRoute check={can.verUsuarios}>
+              <Usuarios />
+            </RoleRoute>
+          } />
 
-        {/* Ruta para /dashboard/certificacion */}
-        <Route path="certificacion" element={<Certificacion />} />
+          <Route path="estructura-presupuestaria" element={<Navigate to="/dashboard/cedula-presupuestaria" replace />} />
+          <Route path="estructura-presupuestaria-data" element={<Navigate to="/dashboard/cedula-presupuestaria" replace />} />
 
-        {/* Ruta para /dashboard/liquidaciones */}
-        <Route path="liquidaciones" element={<Liquidaciones />} />
+          <Route path="cedula-presupuestaria" element={
+            <RoleRoute check={can.verCedula}>
+              <CedulaPresupuestaria />
+            </RoleRoute>
+          } />
 
-        {/* Ruta para /dashboard/entidad-requirente */}
-        <Route path="entidad-requirente" element={<EntidadRequiriente />} />
+          <Route path="certificacion" element={
+            <RoleRoute check={can.verCertificacion}>
+              <Certificacion />
+            </RoleRoute>
+          } />
 
-        {/* Ruta para /dashboard/reportes */}
-        <Route path="reportes" element={<Reportes />} />
+          <Route path="liquidaciones" element={
+            <RoleRoute check={can.verLiquidaciones}>
+              <Liquidaciones />
+            </RoleRoute>
+          } />
 
-        {/* Ruta para /dashboard/auditoria */}
-        <Route path="auditoria" element={<Auditoria />} />
+          <Route path="unidad-requiriente" element={
+            <RoleRoute check={can.verEntidadRequiriente}>
+              <EntidadRequiriente />
+            </RoleRoute>
+          } />
 
-        {/* Ruta por defecto del dashboard */}
-        <Route 
-          index 
-          element={<Inicio />}
-        />
-      </Route>
+          <Route path="reportes" element={
+            <RoleRoute check={can.verReportes}>
+              <Reportes />
+            </RoleRoute>
+          } />
 
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+          <Route path="auditoria" element={
+            <RoleRoute check={can.verAuditoria}>
+              <Auditoria />
+            </RoleRoute>
+          } />
+
+          <Route index element={<Inicio />} />
+        </Route>
+
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -94,5 +121,3 @@ function App() {
 }
 
 export default App;
-
-

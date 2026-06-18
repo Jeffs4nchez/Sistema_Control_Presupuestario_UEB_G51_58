@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { cachedAxiosGet, invalidateCache } from '../utils/apiCache';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Edit2, Trash2, UserPlus, Users, UserCheck, UserX, X, Lock, Eye, EyeOff, Search } from 'lucide-react';
+import { Edit2, Trash2, UserPlus, Users, UserCheck, UserX, ShieldOff, ShieldCheck, X, Lock, Eye, EyeOff, Search } from 'lucide-react';
 
 const CARGOS = [
-  'Director(a) financiera',
-  'Analista de presupuesto',
+  'Director(a) financiero',
+  'Analista de presupuesto 1',
+  'Analista de presupuesto 3',
   'Director(a) de talento humano',
   'Rector',
 ];
@@ -72,11 +74,64 @@ function PasswordField({ label, value, onChange, placeholder }) {
   );
 }
 
+function SkeletonUsuariosStats({ isMobile }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.95)', borderRadius: '14px', boxShadow: '0 4px 20px rgba(26,58,92,0.08)', padding: '18px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <div className="skeleton" style={{ width: '36px', height: '36px', borderRadius: '10px' }} />
+            <div className="skeleton" style={{ width: '80px', height: '11px', borderRadius: '6px' }} />
+          </div>
+          <div className="skeleton" style={{ width: '50px', height: '28px', borderRadius: '8px' }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SkeletonUsuariosRows() {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
+        <thead>
+          <tr style={{ background: '#f0f4f8', borderBottom: '2px solid rgba(26,58,92,0.08)' }}>
+            {['Nombre', 'Correo', 'Cargo', 'Estado', 'Acciones'].map((h, i) => (
+              <th key={i} style={{ padding: '11px 16px', textAlign: i === 4 ? 'center' : 'left', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[0, 1, 2, 3, 4].map(i => (
+            <tr key={i} style={{ borderBottom: '1px solid rgba(26,58,92,0.07)' }}>
+              <td style={{ padding: '12px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className="skeleton" style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0 }} />
+                  <div className="skeleton" style={{ width: '120px', height: '13px', borderRadius: '6px' }} />
+                </div>
+              </td>
+              <td style={{ padding: '12px 16px' }}><div className="skeleton" style={{ width: '160px', height: '12px', borderRadius: '6px' }} /></td>
+              <td style={{ padding: '12px 16px' }}><div className="skeleton" style={{ width: '100px', height: '20px', borderRadius: '999px' }} /></td>
+              <td style={{ padding: '12px 16px' }}><div className="skeleton" style={{ width: '60px', height: '20px', borderRadius: '999px' }} /></td>
+              <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                  <div className="skeleton" style={{ width: '32px', height: '32px', borderRadius: '8px' }} />
+                  <div className="skeleton" style={{ width: '32px', height: '32px', borderRadius: '8px' }} />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export const Usuarios = () => {
   const { token } = useAuth();
   const [usuarios, setUsuarios] = useState([]);
   const [filtroNombre, setFiltroNombre] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [globalMsg, setGlobalMsg] = useState({ text: '', type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -102,7 +157,7 @@ export const Usuarios = () => {
   const cargarUsuarios = async () => {
     try {
       setIsLoading(true);
-      const res = await axios.get(`${import.meta.env.VITE_API_URL}/usuarios`, {
+      const res = await cachedAxiosGet(`${import.meta.env.VITE_API_URL}/usuarios`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data.status === 'success') setUsuarios(res.data.data);
@@ -129,6 +184,21 @@ export const Usuarios = () => {
 
   const handleAbrirEliminar = (u) => { setUsuarioAEliminar(u); setShowDeleteDialog(true); };
 
+  const handleDesbloquear = async (u) => {
+    try {
+      setIsLoading(true);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/usuarios/${u.id_usuario}/desbloquear`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.data.status === 'success') {
+        setGlobalMsg({ text: `Cuenta de ${u.nombres} desbloqueada correctamente`, type: 'success' });
+        invalidateCache('/usuarios');
+        cargarUsuarios();
+        setTimeout(() => setGlobalMsg({ text: '', type: '' }), 3500);
+      }
+    } catch (err) {
+      setGlobalMsg({ text: err.response?.data?.message || err.message, type: 'error' });
+    } finally { setIsLoading(false); }
+  };
+
   const handleCrearUsuario = async () => {
     if (!formData.nombres || !formData.apellidos || !formData.correo_institucional || !formData.cargo) {
       setDialogMsg({ text: 'Todos los campos son requeridos', type: 'error' }); return;
@@ -139,7 +209,7 @@ export const Usuarios = () => {
       const res = await axios.post(`${import.meta.env.VITE_API_URL}/usuarios`, createData, { headers: { Authorization: `Bearer ${token}` } });
       if (res.data.status === 'success') {
         setDialogMsg({ text: 'Usuario creado. Se envió un correo con las credenciales de acceso.', type: 'success' });
-        setTimeout(() => { setShowCreateDialog(false); setDialogMsg({ text: '', type: '' }); cargarUsuarios(); }, 2000);
+        setTimeout(() => { setShowCreateDialog(false); setDialogMsg({ text: '', type: '' }); invalidateCache('/usuarios'); cargarUsuarios(); }, 2000);
       }
     } catch (err) {
       const msg = err.response?.data?.errors ? Object.values(err.response.data.errors).flat().join(', ') : err.response?.data?.message || err.message;
@@ -158,7 +228,7 @@ export const Usuarios = () => {
       const res = await axios.put(`${import.meta.env.VITE_API_URL}/usuarios/${usuarioAEditar.id_usuario}`, datos, { headers: { Authorization: `Bearer ${token}` } });
       if (res.data.status === 'success') {
         setDialogMsg({ text: 'Usuario actualizado exitosamente', type: 'success' });
-        setTimeout(() => { setShowEditDialog(false); setDialogMsg({ text: '', type: '' }); cargarUsuarios(); }, 1400);
+        setTimeout(() => { setShowEditDialog(false); setDialogMsg({ text: '', type: '' }); invalidateCache('/usuarios'); cargarUsuarios(); }, 1400);
       }
     } catch (err) {
       const msg = err.response?.data?.errors ? Object.values(err.response.data.errors).flat().join(', ') : err.response?.data?.message || err.message;
@@ -173,6 +243,7 @@ export const Usuarios = () => {
       if (res.data.status === 'success') {
         setGlobalMsg({ text: 'Usuario eliminado exitosamente', type: 'success' });
         setShowDeleteDialog(false);
+        invalidateCache('/usuarios');
         cargarUsuarios();
         setTimeout(() => setGlobalMsg({ text: '', type: '' }), 3500);
       }
@@ -190,6 +261,7 @@ export const Usuarios = () => {
   const totalUsuarios = usuarios.length;
   const activos       = usuarios.filter(u => u.estado === 'activo').length;
   const inactivos     = usuarios.filter(u => u.estado === 'inactivo').length;
+  const bloqueados    = usuarios.filter(u => u.estado === 'bloqueado').length;
 
   const P = isMobile ? '20px' : '28px';
 
@@ -234,11 +306,15 @@ export const Usuarios = () => {
       </AnimatePresence>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      {isLoading && usuarios.length === 0 ? (
+        <SkeletonUsuariosStats isMobile={isMobile} />
+      ) : (
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Total Usuarios', value: totalUsuarios, icon: Users,     color: '#2e6ca4' },
-          { label: 'Activos',        value: activos,       icon: UserCheck, color: '#059669' },
-          { label: 'Inactivos',      value: inactivos,     icon: UserX,     color: '#8b0f0f' },
+          { label: 'Total',      value: totalUsuarios, icon: Users,      color: '#2e6ca4' },
+          { label: 'Activos',    value: activos,       icon: UserCheck,  color: '#059669' },
+          { label: 'Inactivos',  value: inactivos,     icon: UserX,      color: '#8b0f0f' },
+          { label: 'Bloqueados', value: bloqueados,    icon: ShieldOff,  color: '#d97706' },
         ].map((s, i) => {
           const Icon = s.icon;
           return (
@@ -272,6 +348,7 @@ export const Usuarios = () => {
           );
         })}
       </div>
+      )}
 
       {/* Toolbar */}
       <motion.div
@@ -286,7 +363,7 @@ export const Usuarios = () => {
             type="text"
             placeholder="Buscar por nombre, apellido o correo..."
             value={filtroNombre}
-            onChange={(e) => setFiltroNombre(e.target.value)}
+            onChange={(e) => setFiltroNombre(e.target.value.slice(0, 100))} maxLength={100}
             style={{ ...inputStyle, paddingLeft: '32px' }}
             onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
             onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
@@ -327,10 +404,7 @@ export const Usuarios = () => {
         }}
       >
         {isLoading && usuariosFiltrados.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ width: '36px', height: '36px', border: '3px solid rgba(46,108,164,0.15)', borderTopColor: '#2e6ca4', borderRadius: '50%', animation: 'spin 0.9s linear infinite', margin: '0 auto 12px' }} />
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Cargando usuarios...</p>
-          </div>
+          <SkeletonUsuariosRows />
         ) : usuariosFiltrados.length === 0 ? (
           <div style={{ padding: '48px', textAlign: 'center' }}>
             <Users size={36} color="rgba(26,58,92,0.15)" style={{ marginBottom: '12px' }} />
@@ -389,11 +463,30 @@ export const Usuarios = () => {
                     <td style={{ padding: '12px 16px' }}>
                       {u.estado === 'activo'
                         ? <span className="badge badge-green">Activo</span>
-                        : <span className="badge badge-red">Inactivo</span>
+                        : u.estado === 'bloqueado'
+                          ? <span className="badge" style={{ background: 'rgba(217,119,6,0.12)', color: '#92400e', border: '1px solid rgba(217,119,6,0.30)', borderRadius: '999px', padding: '2px 10px', fontSize: '11px', fontWeight: 700 }}>Bloqueado</span>
+                          : <span className="badge badge-red">Inactivo</span>
                       }
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                        {u.estado === 'bloqueado' && (
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => handleDesbloquear(u)}
+                            title="Desbloquear cuenta"
+                            style={{
+                              width: '32px', height: '32px',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: 'rgba(217,119,6,0.10)',
+                              border: '1px solid rgba(217,119,6,0.28)',
+                              borderRadius: '8px', color: '#d97706', cursor: 'pointer',
+                            }}
+                          >
+                            <ShieldCheck size={14} />
+                          </motion.button>
+                        )}
                         <motion.button
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
@@ -439,24 +532,24 @@ export const Usuarios = () => {
       {/* Crear */}
       <AnimatePresence>
         {showCreateDialog && (
-          <UEBModal title="Crear Nuevo Usuario" onClose={() => setShowCreateDialog(false)} isMobile={isMobile}>
+          <UEBModal title="Crear Nuevo Usuario" onClose={() => setShowCreateDialog(false)} isMobile={isMobile} icon={UserPlus}>
             <DialogMsg msg={dialogMsg} onClose={() => setDialogMsg({ text: '', type: '' })} />
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0 14px' }}>
               <FormField label="Nombres *">
-                <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} style={inputStyle}
+                <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value.slice(0, 50) })} maxLength={50} style={inputStyle}
                   onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
                   onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
                 />
               </FormField>
               <FormField label="Apellidos *">
-                <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value })} style={inputStyle}
+                <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value.slice(0, 50) })} maxLength={50} style={inputStyle}
                   onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
                   onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
                 />
               </FormField>
             </div>
             <FormField label="Correo Institucional *">
-              <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value })} style={inputStyle}
+              <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value.slice(0, 60) })} maxLength={60} style={inputStyle}
                 onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
                 onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
               />
@@ -492,24 +585,24 @@ export const Usuarios = () => {
       {/* Editar */}
       <AnimatePresence>
         {showEditDialog && usuarioAEditar && (
-          <UEBModal title="Editar Usuario" onClose={() => setShowEditDialog(false)} isMobile={isMobile}>
+          <UEBModal title="Editar Usuario" onClose={() => setShowEditDialog(false)} isMobile={isMobile} icon={Edit2}>
             <DialogMsg msg={dialogMsg} onClose={() => setDialogMsg({ text: '', type: '' })} />
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0 14px' }}>
               <FormField label="Nombres *">
-                <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} style={inputStyle}
+                <input type="text" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value.slice(0, 50) })} maxLength={50} style={inputStyle}
                   onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
                   onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
                 />
               </FormField>
               <FormField label="Apellidos *">
-                <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value })} style={inputStyle}
+                <input type="text" value={formData.apellidos} onChange={(e) => setFormData({ ...formData, apellidos: e.target.value.slice(0, 50) })} maxLength={50} style={inputStyle}
                   onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
                   onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
                 />
               </FormField>
             </div>
             <FormField label="Correo Institucional *">
-              <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value })} style={inputStyle}
+              <input type="email" value={formData.correo_institucional} onChange={(e) => setFormData({ ...formData, correo_institucional: e.target.value.slice(0, 60) })} maxLength={60} style={inputStyle}
                 onFocus={(e) => { e.target.style.borderColor = '#54b3e0'; e.target.style.boxShadow = '0 0 0 3px rgba(84,179,224,0.18)'; }}
                 onBlur={(e) => { e.target.style.borderColor = 'rgba(46,108,164,0.22)'; e.target.style.boxShadow = 'none'; }}
               />
@@ -543,7 +636,7 @@ export const Usuarios = () => {
       {/* Eliminar */}
       <AnimatePresence>
         {showDeleteDialog && usuarioAEliminar && (
-          <UEBModal title="Confirmar Eliminación" onClose={() => setShowDeleteDialog(false)} isMobile={isMobile} small>
+          <UEBModal title="Confirmar Eliminación" onClose={() => setShowDeleteDialog(false)} isMobile={isMobile} small icon={Trash2} gradient="linear-gradient(135deg, #7f1d1d, #b91c1c)">
             <div style={{
               width: '52px', height: '52px', borderRadius: '50%',
               background: 'rgba(139,15,15,0.10)', border: '1px solid rgba(139,15,15,0.20)',
@@ -567,7 +660,8 @@ export const Usuarios = () => {
 
 /* ── Sub-components ──────────────────────────────────────────────── */
 
-function UEBModal({ title, onClose, isMobile, small, children }) {
+function UEBModal({ title, onClose, isMobile, small, icon: Icon, gradient, children }) {
+  const headerBg = gradient || 'linear-gradient(135deg, #1a3a5c, #2e6ca4)'
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -575,51 +669,49 @@ function UEBModal({ title, onClose, isMobile, small, children }) {
       exit={{ opacity: 0 }}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(10,25,47,0.50)',
-        backdropFilter: 'blur(6px)',
+        background: 'rgba(15,30,55,0.55)',
+        backdropFilter: 'blur(5px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 1000, padding: '16px',
       }}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 16 }}
-        transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+        initial={{ scale: 0.88, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.88, opacity: 0, y: 24 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 26 }}
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: 'rgba(255,255,255,0.96)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255,255,255,0.95)',
+          background: '#ffffff',
           borderRadius: '18px',
-          padding: isMobile ? '22px' : '28px',
           width: '100%',
           maxWidth: small ? '420px' : '540px',
           maxHeight: '90vh',
-          overflow: 'auto',
-          boxShadow: '0 24px 80px rgba(26,58,92,0.25)',
+          overflow: 'hidden',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
           fontFamily: 'var(--font-primary)',
+          display: 'flex', flexDirection: 'column',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-heading)' }}>{title}</h3>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'rgba(26,58,92,0.06)', border: 'none',
-              color: 'var(--text-muted)', cursor: 'pointer',
-              width: '28px', height: '28px', borderRadius: '8px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.12)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(26,58,92,0.06)'; }}
+        {/* Header con color */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '18px 22px', background: headerBg, flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {Icon && <Icon size={16} color="rgba(255,255,255,0.85)" />}
+            <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>{title}</span>
+          </div>
+          <button onClick={onClose}
+            style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: 'rgba(255,255,255,0.75)', cursor: 'pointer', width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <X size={14} />
           </button>
         </div>
-        {children}
+        {/* Contenido */}
+        <div style={{ padding: isMobile ? '22px' : '28px', overflowY: 'auto', flex: 1 }}>
+          {children}
+        </div>
       </motion.div>
     </motion.div>
   );

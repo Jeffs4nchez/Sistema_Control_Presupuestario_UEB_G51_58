@@ -102,28 +102,24 @@ export default function CambiarContrasenaModal({ onClose }) {
       onClick={esObligatoria ? undefined : onClose}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(10,25,47,0.50)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        background: 'rgba(15,30,55,0.55)',
+        backdropFilter: 'blur(5px)',
         zIndex: 1000,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px',
       }}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.94, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.94, y: 20 }}
-        transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+        initial={{ scale: 0.88, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.88, opacity: 0, y: 24 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 26 }}
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: 'rgba(255,255,255,0.97)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255,255,255,0.95)',
-          borderRadius: '20px',
+          background: '#ffffff',
+          borderRadius: '18px',
           width: '100%', maxWidth: '420px',
-          boxShadow: '0 24px 80px rgba(10,25,47,0.25)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
           fontFamily: 'var(--font-primary)',
           overflow: 'hidden',
         }}
