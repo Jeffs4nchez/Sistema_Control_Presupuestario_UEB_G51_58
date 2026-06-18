@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Traits\EnviaCorreoHtml;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -11,6 +12,8 @@ use Carbon\Carbon;
 
 class AuthController extends Controller
 {
+    use EnviaCorreoHtml;
+
     /**
      * Login user and return token
      */
@@ -201,17 +204,27 @@ class AuthController extends Controller
         $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
         $resetUrl    = "{$frontendUrl}/restablecer-contrasena?token={$token}";
 
-        $body = "Hola {$user->nombres},\n\n"
-              . "Recibimos una solicitud para restablecer la contraseña de tu cuenta en el Sistema de Control Presupuestario UEB.\n\n"
-              . "Haz clic en el siguiente enlace para establecer una nueva contraseña (válido por 30 minutos):\n\n"
-              . $resetUrl . "\n\n"
-              . "Si no solicitaste este cambio, ignora este correo. Tu contraseña actual seguirá siendo la misma.\n\n"
-              . "Sistema de Control Presupuestario — UEB";
+        $asunto = 'Solicitud de Restablecimiento de Contraseña — Sistema de Control Presupuestario';
+
+        $cuerpo = "Estimado/a {$user->nombres},\n\n"
+            . "Hemos recibido una solicitud para restablecer la contraseña asociada a su cuenta "
+            . "en el Sistema de Control Presupuestario de la Universidad Estatal de Bolívar.\n\n"
+            . "Para establecer una nueva contraseña, le invitamos a hacer clic en el botón a continuación. "
+            . "Tenga en cuenta que este enlace es válido únicamente por 30 minutos a partir de este momento.\n\n"
+            . "Si usted no realizó esta solicitud, puede ignorar este mensaje con total tranquilidad. "
+            . "Su contraseña actual no sufrirá ningún cambio.\n\n"
+            . "Por razones de seguridad, no comparta este enlace con ninguna otra persona.\n\n"
+            . "Atentamente,\n"
+            . "Sistema de Control Presupuestario\n"
+            . "Universidad Estatal de Bolívar";
+
+        $extras = $this->botonAccion($resetUrl, 'Restablecer mi contraseña');
+        $html   = $this->plantillaHtml($asunto, $cuerpo, $extras);
 
         try {
-            Mail::raw($body, function ($message) use ($user) {
+            Mail::html($html, function ($message) use ($user, $asunto) {
                 $message->to($user->correo_institucional, $user->nombres)
-                        ->subject('Restablece tu contraseña — UEB');
+                        ->subject($asunto);
             });
         } catch (\Exception $e) {
             \Log::error('Error enviando email de recuperación: ' . $e->getMessage());

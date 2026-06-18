@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Traits\EnviaCorreoHtml;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Hash;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Auth;
 
 class UserController extends Controller
 {
+    use EnviaCorreoHtml;
+
     private static array $rolesPermitidos = ['Director(a) financiero', 'Administrador del sistema'];
 
     private function denegarSiNoEsAdmin(): ?\Illuminate\Http\JsonResponse
@@ -127,17 +130,31 @@ class UserController extends Controller
 
     private function enviarCredencialesEmail(User $usuario, string $contrasenaTemp): void
     {
-        $body = "Hola {$usuario->nombres} {$usuario->apellidos},\n\n"
-              . "Tu cuenta en el Sistema de Control Presupuestario UEB ha sido creada exitosamente.\n\n"
-              . "Tus credenciales de acceso son:\n"
-              . "  Usuario: {$usuario->correo_institucional}\n"
-              . "  Contraseña temporal: {$contrasenaTemp}\n\n"
-              . "IMPORTANTE: Al ingresar por primera vez el sistema te pedirá que establezcas una nueva contraseña.\n\n"
-              . "Sistema de Control Presupuestario — UEB";
+        $nombreCompleto = trim("{$usuario->nombres} {$usuario->apellidos}");
+        $asunto = 'Bienvenido/a al Sistema de Control Presupuestario — Credenciales de Acceso';
 
-        Mail::raw($body, function ($message) use ($usuario) {
-            $message->to($usuario->correo_institucional, "{$usuario->nombres} {$usuario->apellidos}")
-                    ->subject('Bienvenido al Sistema — Tus credenciales de acceso — UEB');
+        $cuerpo = "Estimado/a {$nombreCompleto},\n\n"
+            . "Me permito comunicarle que su cuenta en el Sistema de Control Presupuestario "
+            . "de la Universidad Estatal de Bolívar ha sido creada exitosamente.\n\n"
+            . "A continuación se detallan sus credenciales de acceso. Le recomendamos guardar "
+            . "esta información en un lugar seguro y no compartirla con terceros.\n\n"
+            . "IMPORTANTE: Al ingresar por primera vez, el sistema le solicitará que establezca "
+            . "una nueva contraseña personal. Por razones de seguridad, le pedimos cambiarla de inmediato.\n\n"
+            . "Atentamente,\n"
+            . "Sistema de Control Presupuestario\n"
+            . "Universidad Estatal de Bolívar";
+
+        $extras = $this->bloqueCredenciales(
+            $usuario->correo_institucional,
+            $contrasenaTemp,
+            $usuario->cargo
+        );
+
+        $html = $this->plantillaHtml($asunto, $cuerpo, $extras);
+
+        Mail::html($html, function ($message) use ($usuario, $nombreCompleto, $asunto) {
+            $message->to($usuario->correo_institucional, $nombreCompleto)
+                    ->subject($asunto);
         });
     }
 

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import CambiarContrasenaModal from '../components/CambiarContrasenaModal';
 import { useFiscalYear } from '../contexts/FiscalYearContext';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo.webp';
 
 const SIDEBAR_W_OPEN     = '264px';
 const SIDEBAR_W_COLLAPSED = '64px';
@@ -239,6 +239,7 @@ export const Dashboard = () => {
         }}>
           <img
             src={logo} alt="UEB"
+            width="62" height="62"
             style={{ width: sidebarOpen ? '62px' : '38px', height: sidebarOpen ? '62px' : '38px', objectFit: 'contain', transition: 'width 0.3s ease, height 0.3s ease', flexShrink: 0 }}
           />
           {sidebarOpen && (

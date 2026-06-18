@@ -131,7 +131,7 @@ export const Usuarios = () => {
   const { token } = useAuth();
   const [usuarios, setUsuarios] = useState([]);
   const [filtroNombre, setFiltroNombre] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [globalMsg, setGlobalMsg] = useState({ text: '', type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 

@@ -49,11 +49,10 @@ function SaldoBar({ codificado, certificado }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
       <div style={{ flex: 1, height: '5px', background: 'rgba(26,58,92,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-        <motion.div
-          initial={{ width: 0 }} animate={{ width: `${pct}%` }}
-          transition={{ duration: 1, ease: 'easeOut' }}
-          style={{ height: '100%', background: color, borderRadius: '3px' }}
-        />
+        <div style={{
+          height: '100%', background: color, borderRadius: '3px',
+          width: `${pct}%`, transition: 'width 1s ease-out',
+        }} />
       </div>
       <span style={{ fontSize: '10px', color, fontWeight: 700, width: '28px', flexShrink: 0, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
         {pct.toFixed(0)}%
@@ -727,10 +726,8 @@ export default function CedulaPresupuestaria() {
                           const rowKey        = `${item.id_item}_${item.id_fuente}`
                           const isHighlighted = highlightKeys.size > 0 && highlightKeys.has(rowKey)
                           return (
-                          <motion.tr
+                          <tr
                             key={`${item.id_item}-${item.cod_fuente ?? idx}`}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                            transition={{ delay: Math.min(idx * 0.008, 0.3) }}
                             style={{
                               background: isHighlighted
                                 ? 'rgba(46,108,164,0.28)'
@@ -757,7 +754,7 @@ export default function CedulaPresupuestaria() {
                                 : <CheckCircle2 size={14} color={GREEN} title="Saldo disponible" />
                               }
                             </td>
-                          </motion.tr>
+                          </tr>
                           )
                         })}
                       </tbody>

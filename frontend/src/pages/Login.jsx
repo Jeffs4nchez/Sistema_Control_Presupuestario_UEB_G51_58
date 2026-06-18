@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { Button, Input, Alert, Flex, Container } from '../components/ThemeComponents';
-import logoSNC from '../assets/logo.png';
+import logoSNC from '../assets/logo.webp';
 import { theme, createGradient } from '../config/theme';
 
 export const Login = () => {
